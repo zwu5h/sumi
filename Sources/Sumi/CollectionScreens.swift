@@ -169,6 +169,7 @@ struct OfflineView: View {
 
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance = "light"
+    @AppStorage("verticalReading") private var verticalReading = false
     @AppStorage("rightToLeft") private var rightToLeft = true
     @AppStorage("hideControls") private var hideControls = true
     @AppStorage("keepAwake") private var keepAwake = false
@@ -188,7 +189,9 @@ struct SettingsView: View {
                     }
                     SectionHeading(title: "Your reading ritual")
                     QuietPanel {
-                        Toggle(isOn: $rightToLeft) { Label("Read right to left", systemImage: "arrow.left.to.line") }.frame(minHeight: 44)
+                        Toggle(isOn: $verticalReading) { Label("Vertical scrolling", systemImage: "arrow.down") }.frame(minHeight: 44)
+                        Divider()
+                        Toggle(isOn: $rightToLeft) { Label("Read right to left", systemImage: "arrow.left.to.line") }.frame(minHeight: 44).disabled(verticalReading)
                         Divider()
                         Toggle(isOn: $hideControls) { Label("Automatically hide controls", systemImage: "rectangle.dashed") }.frame(minHeight: 44)
                         Divider()

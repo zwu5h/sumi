@@ -7,6 +7,7 @@ struct ReaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("verticalReading") private var verticalReading = false
     @AppStorage("rightToLeft") private var rightToLeft = true
     @AppStorage("hideControls") private var autoHide = true
     @AppStorage("keepAwake") private var keepAwake = false
@@ -36,6 +37,10 @@ struct ReaderView: View {
             } else if loadError {
                 ContentUnavailableView("Couldn’t open this document", systemImage: "doc.questionmark", description: Text("Return to your library and import an unlocked PDF again."))
                     .foregroundStyle(.white)
+            } else if verticalReading, let document {
+                ContinuousPDFView(document: document, page: $page, onTap: toggleControls)
+                    .id(chapter).ignoresSafeArea()
+                    .accessibilityAction(named: "Show reading controls") { revealControls() }
             } else {
                 TabView(selection: $page) {
                     ForEach(pages, id: \.self) { index in
@@ -77,6 +82,7 @@ struct ReaderView: View {
         .overlay(alignment: .bottom) {
             if controls && !loading && !loadError {
                 VStack(spacing: 8) {
+                    ReaderModeButton()
                     HStack {
                         Button { previousPage() } label: { Image(systemName: "chevron.backward").frame(width: 44, height: 44) }
                             .disabled(page == 0 && chapter == 1).accessibilityLabel("Previous page")
@@ -248,5 +254,103 @@ struct SampleMangaPage: View {
                 Image(manga.artResourceName, bundle: .module).resizable().scaledToFill().saturation(0)
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: offset).clipped()
         }.frame(height: max(20, height)).border(.black.opacity(0.85), width: 1)
+    }
+}
+
+/// Keeps page seeking and saved progress shared between continuous and paged reading.
+struct VerticalReaderPages<Content: View>: View {
+    let count: Int
+    @Binding var page: Int
+    let content: (Int, CGFloat) -> Content
+    @State private var visiblePage: Int?
+
+    init(count: Int, page: Binding<Int>, @ViewBuilder content: @escaping (Int, CGFloat) -> Content) {
+        self.count = count
+        _page = page
+        self.content = content
+        _visiblePage = State(initialValue: page.wrappedValue)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { index in
+                        content(index, geometry.size.width)
+                            .frame(width: geometry.size.width)
+                            .id(index)
+                    }
+                }.scrollTargetLayout()
+            }
+            .scrollPosition(id: $visiblePage, anchor: .top)
+            .onChange(of: visiblePage) { _, value in
+                if let value, value != page { page = value }
+            }
+            .onChange(of: page) { _, value in
+                if visiblePage != value { visiblePage = value }
+            }
+        }
+    }
+}
+
+struct ReaderModeButton: View {
+    @AppStorage("verticalReading") private var verticalReading = false
+
+    var body: some View {
+        Button { verticalReading.toggle() } label: {
+            Label(verticalReading ? "Vertical scrolling" : "Paged reading",
+                  systemImage: verticalReading ? "arrow.down" : "book.pages")
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .accessibilityHint(verticalReading ? "Switch to paged reading" : "Switch to vertical scrolling")
+    }
+}
+
+struct ContinuousPDFView: UIViewRepresentable {
+    let document: PDFDocument
+    @Binding var page: Int
+    var onTap: () -> Void
+
+    class Coordinator: PDFPageView.Coordinator {
+        var selection: Binding<Int>
+        init(selection: Binding<Int>, onTap: @escaping () -> Void) {
+            self.selection = selection
+            super.init(onTap: onTap)
+        }
+        @objc func pageChanged(_ notification: Notification) {
+            guard let view = notification.object as? PDFView,
+                  let current = view.currentPage, let document = view.document else { return }
+            let index = document.index(for: current)
+            if index != NSNotFound, selection.wrappedValue != index {
+                selection.wrappedValue = index
+            }
+        }
+        deinit { NotificationCenter.default.removeObserver(self) }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(selection: $page, onTap: onTap) }
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.displaysPageBreaks = false
+        view.backgroundColor = .black
+        view.document = document
+        view.autoScales = true
+        if let target = document.page(at: page) { view.go(to: target) }
+        NotificationCenter.default.addObserver(context.coordinator,
+            selector: #selector(Coordinator.pageChanged(_:)), name: .PDFViewPageChanged, object: view)
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+        return view
+    }
+    func updateUIView(_ view: PDFView, context: Context) {
+        context.coordinator.selection = $page
+        context.coordinator.onTap = onTap
+        if view.document !== document { view.document = document }
+        if let target = document.page(at: page), view.currentPage !== target { view.go(to: target) }
     }
 }

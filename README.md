@@ -39,7 +39,7 @@ Artwork headers grow with their text rather than clipping large Dynamic Type con
 - Library: cinematic featured artwork, adaptive artwork grid, native search, All/Reading/Unread/Completed filters, title sorting, PDF import, reading progress.
 - Discover: original sample collection, genre filters, native cover zoom transitions when supported and Reduce Motion is off.
 - Details: artwork-derived backdrop, collapsing cover, metadata, chapter list, library bookmark, floating reading action.
-- Reader: paged reading, right-to-left option, PDFKit pinch zoom for imported PDFs, chapter chooser, page slider, saved position, four-second auto-hide controls, optional screen-awake mode.
+- Reader: paged reading or continuous vertical scrolling (switch in the reader or Settings → Reading), right-to-left option for paged mode, PDFKit pinch zoom for imported PDFs, chapter chooser, page slider, saved position, four-second auto-hide controls, optional screen-awake mode.
 - Updates: available chapters for the clearly labeled sample collection.
 - Downloads: locally imported PDFs, offline reading, confirmed deletion.
 - Settings: light default, dark/system appearance, reader preferences, accessibility information.

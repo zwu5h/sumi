@@ -92,6 +92,7 @@ struct SourceReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @AppStorage("verticalReading") private var verticalReading = false
     @AppStorage("rightToLeft") private var rightToLeft = true
     @AppStorage("hideControls") private var autoHide = true
     @AppStorage("keepAwake") private var keepAwake = false
@@ -133,6 +134,17 @@ struct SourceReaderView: View {
                     Text(error).font(.subheadline).multilineTextAlignment(.center)
                     Button("Try again") { retry += 1 }.buttonStyle(.bordered)
                 }.padding()
+            } else if verticalReading {
+                VerticalReaderPages(count: pages.count, page: $page) { index, width in
+                    SourceImage(url: pages[index], sourceID: reference.sourceID, fitWidth: true, onLoaded: {
+                        loaded.insert(index)
+                        if index == page { save() }
+                    }, onRetry: { save(); retry += 1 })
+                        .frame(width: width)
+                        .contentShape(Rectangle()).onTapGesture { toggleControls() }
+                        .accessibilityLabel("Page \(index + 1)")
+                        .accessibilityAction(named: "Show reading controls") { controls = true; resetTimer() }
+                }.id(chapter).ignoresSafeArea()
             } else {
                 TabView(selection: $page) {
                     ForEach(indices, id: \.self) { index in
@@ -165,6 +177,7 @@ struct SourceReaderView: View {
             .overlay(alignment: .bottom) {
                 if controls && !loading && error == nil {
                     VStack(spacing: 4) {
+                        ReaderModeButton()
                         HStack {
                             Button { previous() } label: { Image(systemName: "chevron.backward").frame(width: 48, height: 48) }
                                 .disabled(chapter == 1 && page == 0).accessibilityLabel("Previous page")

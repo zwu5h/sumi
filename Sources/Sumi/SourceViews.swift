@@ -308,6 +308,7 @@ struct SourceImage: View {
     let url: URL?
     let sourceID: String
     var fill = false
+    var fitWidth = false
     var onLoaded: () -> Void = {}
     var onRetry: (() -> Void)? = nil
     @State private var image: UIImage?
@@ -320,6 +321,7 @@ struct SourceImage: View {
         Group {
             if let image {
                 if fill { Image(uiImage: image).resizable().scaledToFill() }
+                else if fitWidth { Image(uiImage: image).resizable().scaledToFit() }
                 else { ZoomableSourcePage(image: image) }
             } else if error != nil {
                 VStack(spacing: 12) {
@@ -330,7 +332,9 @@ struct SourceImage: View {
                     }.frame(minHeight: 44)
                 }.foregroundStyle(.secondary).padding()
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-        }.task(id: key) {
+        }
+        .frame(minHeight: fitWidth && image == nil ? 320 : nil)
+        .task(id: key) {
             image = nil; error = nil
             do {
                 guard let url else { throw SourceError.invalid("No cover available.") }
