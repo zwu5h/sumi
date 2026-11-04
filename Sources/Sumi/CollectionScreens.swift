@@ -153,7 +153,7 @@ struct SettingsView: View {
                         }
                         Text("PDFs work offline; sources require internet.")
                             .font(Design.font(.footnote)).foregroundStyle(.secondary).lineSpacing(3)
-                        Text("Version 1.0").font(Design.font(.caption)).foregroundStyle(.secondary)
+                        Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.1")").font(Design.font(.caption)).foregroundStyle(.secondary)
                         NavigationLink("Privacy policy") { PrivacyPolicyView() }
                     }.padding(.vertical, 8)
                 }.padding(Design.spacing).frame(maxWidth: 720).frame(maxWidth: .infinity)
