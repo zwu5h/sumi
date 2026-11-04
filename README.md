@@ -40,6 +40,7 @@ Artwork headers grow with their text rather than clipping large Dynamic Type con
 
 - Library: cinematic featured artwork, adaptive artwork grid, native search, All/Reading/Unread/Completed filters, title sorting, PDF import, reading progress.
 - Discover: installed sources, source-name search and repository management; manga details have a visible Save to library button.
+- Source catalogs: two-column cover grid with titles below, optional three-column or list layout, and optional author/genre details. Display preferences persist across launches; accessibility text sizes use a single grid column. The Filters button provides the source's tags, publication status and sort orders when available.
 - Details: artwork-derived backdrop, collapsing cover, metadata, chapter list, library bookmark, floating reading action.
 - Reader: paged reading or continuous vertical scrolling (switch in the reader or Settings → Reading), right-to-left option for paged mode, PDFKit pinch zoom for imported PDFs, chapter chooser, page slider, saved position, four-second auto-hide controls, optional screen-awake mode.
 - Updates: saved online titles; opening a title refreshes its chapter list.

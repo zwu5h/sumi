@@ -114,8 +114,27 @@ private struct SourceInstallView: View {
     }
 }
 
+private enum SourceCatalogLayout: String, CaseIterable {
+    case grid = "Two columns"
+    case compactGrid = "Three columns"
+    case list = "List"
+
+    var symbol: String {
+        switch self {
+        case .grid: return "square.grid.2x2"
+        case .compactGrid: return "square.grid.3x3"
+        case .list: return "list.bullet"
+        }
+    }
+
+    var columnCount: Int { self == .compactGrid ? 3 : 2 }
+}
+
 struct SourceCatalogView: View {
     @EnvironmentObject private var sources: SourceStore
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @AppStorage("sourceCatalogLayout") private var layout: SourceCatalogLayout = .grid
+    @AppStorage("sourceCatalogShowDetails") private var showDetails = false
     let sourceID: String
     @State private var query = ""
     @State private var results: [Manga] = []
@@ -133,53 +152,86 @@ struct SourceCatalogView: View {
     private var taskKey: String { sourceKey + ":" + query + ":\(retry):\(allowNSFW):" + selection.tags.sorted().joined(separator: ",") + ":" + selection.tagMode + ":" + selection.status + ":" + selection.sort }
 
     var body: some View {
-        List {
-            if source != nil {
-                Section {
-                    Toggle("Show NSFW content", isOn: Binding(
-                        get: { allowNSFW },
-                        set: { sources.setAllowNSFW($0, sourceID: sourceID) }
-                    ))
-                } header: { Text("Content") } footer: {
-                    Text("Saved for this source. Requires an extension that supports NSFW content; update the source if needed.")
-                }
-            }
-            if selection.count > 0 {
-                Section {
-                    Text(activeFilters).font(Design.font(.subheadline)).foregroundStyle(.secondary)
-                    Button("Clear filters") { selection = SourceSearchSelection() }
-                }
-            }
-            if source == nil {
-                ContentUnavailableView("Source removed", systemImage: "network.slash", description: Text("Install this source again in Settings → Sources."))
-            } else if loading {
-                ProgressView("Searching source…")
-            } else if let error {
-                Text(error).foregroundStyle(.secondary)
-                Button("Try again") { retry += 1 }
-            } else if results.isEmpty {
-                ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Try another title or change your filters."))
-            } else {
-                ForEach(results) { manga in
-                    NavigationLink { MangaDetailView(manga: manga) } label: {
-                        HStack(spacing: 16) {
-                            CoverArt(manga: manga).frame(width: 64, height: 92).clipShape(RoundedRectangle(cornerRadius: 8))
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(manga.title).font(Design.font(.headline))
-                                Text(manga.author).font(Design.font(.subheadline)).foregroundStyle(.secondary)
-                                Text(manga.genre).font(Design.font(.caption)).foregroundStyle(.secondary)
-                            }
-                        }.padding(.vertical, 6)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                if source != nil {
+                    Section {
+                        Toggle("Show NSFW content", isOn: Binding(
+                            get: { allowNSFW },
+                            set: { sources.setAllowNSFW($0, sourceID: sourceID) }
+                        ))
+                    } header: { Text("Content") } footer: {
+                        Text("Saved for this source. Requires an extension that supports NSFW content; update the source if needed.")
                     }
                 }
-            }
-        }.scrollContentBackground(.hidden).pageBackground()
+                if selection.count > 0 {
+                    Section {
+                        Text(activeFilters).font(Design.font(.subheadline)).foregroundStyle(.secondary)
+                        Button("Clear filters") { selection = SourceSearchSelection() }
+                    }
+                }
+                if source == nil {
+                    ContentUnavailableView("Source removed", systemImage: "network.slash", description: Text("Install this source again in Settings → Sources."))
+                } else if loading {
+                    ProgressView("Searching source…")
+                } else if let error {
+                    Text(error).foregroundStyle(.secondary)
+                    Button("Try again") { retry += 1 }
+                } else if results.isEmpty {
+                    ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Try another title or change your filters."))
+                } else {
+                    Text("\(results.count) titles").font(Design.section).accessibilityAddTraits(.isHeader)
+                    if layout == .list {
+                        ForEach(results) { manga in
+                            NavigationLink { MangaDetailView(manga: manga) } label: {
+                                HStack(spacing: 16) {
+                                    CoverArt(manga: manga).frame(width: 64, height: 92)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    titleInfo(manga)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
+                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(PressStyle())
+                        }
+                    } else {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top),
+                                                 count: typeSize.isAccessibilitySize ? 1 : layout.columnCount),
+                                  alignment: .leading, spacing: 24) {
+                            ForEach(results) { manga in
+                                NavigationLink { MangaDetailView(manga: manga) } label: {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        CoverArt(manga: manga).aspectRatio(0.67, contentMode: .fit)
+                                            .clipShape(RoundedRectangle(cornerRadius: Design.coverCorner))
+                                        titleInfo(manga)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                }.buttonStyle(PressStyle())
+                            }
+                        }
+                    }
+                }
+            }.padding(Design.spacing).frame(maxWidth: Design.contentWidth)
+                .frame(maxWidth: .infinity, alignment: .top)
+        }.pageBackground()
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(source?.manifest.name ?? "Source")
             .searchable(text: $query, prompt: "Search this source")
             .alert("Couldn’t save source setting", isPresented: Binding(get: { sources.error != nil }, set: { if !$0 { sources.error = nil } })) {
                 Button("OK") { sources.error = nil }
             } message: { Text(sources.error ?? "") }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Layout", selection: $layout) {
+                            ForEach(SourceCatalogLayout.allCases, id: \.self) { option in
+                                Label(option.rawValue, systemImage: option.symbol).tag(option)
+                            }
+                        }
+                        Toggle("Show author and genre", isOn: $showDetails)
+                    } label: {
+                        Label("Display options", systemImage: layout.symbol)
+                    }.accessibilityLabel("Display options")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingFilters = true } label: {
                         Label(selection.count > 0 ? "Filters (\(selection.count))" : "Filters", systemImage: selection.count > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -200,6 +252,22 @@ struct SourceCatalogView: View {
                 do { try await Task.sleep(for: .milliseconds(400)); try Task.checkCancellation(); await search() }
                 catch { }
             }
+    }
+
+    private func titleInfo(_ manga: Manga) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(manga.title).font(Design.font(.subheadline).weight(.semibold)).foregroundStyle(.primary)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
+                .fixedSize(horizontal: false, vertical: true)
+            if showDetails {
+                if !manga.author.isEmpty {
+                    Text(manga.author).font(Design.font(.caption)).foregroundStyle(.secondary)
+                }
+                if !manga.genre.isEmpty {
+                    Text(manga.genre).font(Design.font(.caption)).foregroundStyle(.secondary)
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var activeFilters: String {
