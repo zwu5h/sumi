@@ -30,7 +30,7 @@ def build(base_url: str, output: Path):
         ("night", "Where the Night Ends", "night"),
     ]:
         filename = artwork + ".png"
-        shutil.copyfile(root / "Sources/Sumi/Resources" / filename, output / filename)
+        shutil.copyfile(root / "examples/sumi-originals/artwork" / filename, output / filename)
         catalog.append({
             "id": title_id, "title": title, "author": "Sumi Studio",
             "synopsis": "An original Sumi illustration for testing online sources. This demo contains one illustrated page, not a full comic.",

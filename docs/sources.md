@@ -21,8 +21,15 @@ In a source catalog, open **Filters** to search and select tags, match all or an
 tags, choose publication status and sort results. Apply combines these choices with the
 title query; Cancel discards edits, and Clear filters restores the source defaults.
 Only filters provided by the installed extension are shown. Existing MangaDex installations
-need adapter version 1.1.0 from the maintained `sumi-extensions` repository. Refreshing
+need adapter version 1.1.0 or newer from the maintained `sumi-extensions` repository. Refreshing
 the repository alone does not update an installed script; review and install its new version.
+
+Open an installed source and enable **Show NSFW content** in its catalog to include
+adult-rated titles. This setting defaults to off, is saved separately for each source,
+and also applies when requesting chapters and pages from saved titles. MangaDex needs
+adapter version 1.2.0 or newer from `sumi-extensions`; refresh the repository and install
+the update explicitly. Other extensions must implement the content setting themselves.
+Removing a source clears its setting. Clearing search filters preserves it.
 
 Swipe an installed source to remove it. Removing a repository also removes its installed
 extensions. Saved titles and progress remain, with an explicit reinstall error when the
@@ -143,6 +150,14 @@ Older extensions without this method remain searchable and show an unavailable-f
 source defaults). Extensions apply these together with `query` to their full catalog,
 before limiting results. Filter discovery runs independently from title searches, and
 its failure can be retried without blocking the existing title search.
+
+## Source content setting (API v1)
+
+`search`, `chapters` and `pages` additionally receive `allowNSFW`, the string `"true"`
+or `"false"`, from the saved per-source preference. Treat missing input as `"false"`.
+Apply it consistently to catalog requests, title checks, chapter feeds and page lookup.
+Older extensions may ignore the field and retain their existing content restrictions.
+MangaDex 1.2.0 defaults to Safe and includes all four ratings only for `"true"`.
 
 ## Execution and privacy
 

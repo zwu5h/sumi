@@ -27,8 +27,8 @@ struct SourcesView: View {
                 ForEach(sources.installed) { source in
                     NavigationLink { SourceCatalogView(sourceID: source.id) } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(source.manifest.name).font(.headline)
-                            Text("Version \(source.manifest.version) · \(source.manifest.author)").font(.caption).foregroundStyle(.secondary)
+                            Text(source.manifest.name).font(Design.font(.headline))
+                            Text("Version \(source.manifest.version) · \(source.manifest.author)").font(Design.font(.caption)).foregroundStyle(.secondary)
                         }.padding(.vertical, 6)
                     }.swipeActions {
                         Button("Remove", role: .destructive) { sources.removeSource(source.id) }
@@ -42,8 +42,8 @@ struct SourcesView: View {
                         Button { installation = SourceInstallation(manifest: manifest, repository: repository) } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(manifest.name).font(.headline)
-                                    Text("\(manifest.version) · \(manifest.author)").font(.caption).foregroundStyle(.secondary)
+                                    Text(manifest.name).font(Design.font(.headline))
+                                    Text("\(manifest.version) · \(manifest.author)").font(Design.font(.caption)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName: sources.installed.contains(where: { $0.manifest == manifest && $0.repositoryURL == repository.url }) ? "checkmark.circle" : "arrow.down.circle")
@@ -84,7 +84,7 @@ private struct SourceInstallView: View {
                 Section(selection.manifest.name) {
                     LabeledContent("Version", value: selection.manifest.version)
                     LabeledContent("Author", value: selection.manifest.author)
-                    Text(selection.repository.url.absoluteString).font(.caption).foregroundStyle(.secondary)
+                    Text(selection.repository.url.absoluteString).font(Design.font(.caption)).foregroundStyle(.secondary)
                     Link("Source website", destination: selection.manifest.website)
                 }
                 Section("Can connect to") {
@@ -92,7 +92,7 @@ private struct SourceInstallView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(host).textSelection(.enabled)
                             if host.hasPrefix("*.") {
-                                Text("All subdomains of \(host.dropFirst(2))").font(.caption).foregroundStyle(.secondary)
+                                Text("All subdomains of \(host.dropFirst(2))").font(Design.font(.caption)).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -129,13 +129,24 @@ struct SourceCatalogView: View {
     @State private var loadingFilters = false
     private var source: InstalledSource? { sources.installed.first { $0.id == sourceID } }
     private var sourceKey: String { sourceID + ":" + (source.map { String($0.manifest.hashValue) } ?? "removed") }
-    private var taskKey: String { sourceKey + ":" + query + ":\(retry):" + selection.tags.sorted().joined(separator: ",") + ":" + selection.tagMode + ":" + selection.status + ":" + selection.sort }
+    private var allowNSFW: Bool { sources.nsfwSourceIDs.contains(sourceID) }
+    private var taskKey: String { sourceKey + ":" + query + ":\(retry):\(allowNSFW):" + selection.tags.sorted().joined(separator: ",") + ":" + selection.tagMode + ":" + selection.status + ":" + selection.sort }
 
     var body: some View {
         List {
+            if source != nil {
+                Section {
+                    Toggle("Show NSFW content", isOn: Binding(
+                        get: { allowNSFW },
+                        set: { sources.setAllowNSFW($0, sourceID: sourceID) }
+                    ))
+                } header: { Text("Content") } footer: {
+                    Text("Saved for this source. Requires an extension that supports NSFW content; update the source if needed.")
+                }
+            }
             if selection.count > 0 {
                 Section {
-                    Text(activeFilters).font(.subheadline).foregroundStyle(.secondary)
+                    Text(activeFilters).font(Design.font(.subheadline)).foregroundStyle(.secondary)
                     Button("Clear filters") { selection = SourceSearchSelection() }
                 }
             }
@@ -154,9 +165,9 @@ struct SourceCatalogView: View {
                         HStack(spacing: 16) {
                             CoverArt(manga: manga).frame(width: 64, height: 92).clipShape(RoundedRectangle(cornerRadius: 8))
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(manga.title).font(.headline)
-                                Text(manga.author).font(.subheadline).foregroundStyle(.secondary)
-                                Text(manga.genre).font(.caption).foregroundStyle(.secondary)
+                                Text(manga.title).font(Design.font(.headline))
+                                Text(manga.author).font(Design.font(.subheadline)).foregroundStyle(.secondary)
+                                Text(manga.genre).font(Design.font(.caption)).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 6)
                     }
@@ -165,6 +176,9 @@ struct SourceCatalogView: View {
         }.scrollContentBackground(.hidden).pageBackground()
             .navigationTitle(source?.manifest.name ?? "Source")
             .searchable(text: $query, prompt: "Search this source")
+            .alert("Couldn’t save source setting", isPresented: Binding(get: { sources.error != nil }, set: { if !$0 { sources.error = nil } })) {
+                Button("OK") { sources.error = nil }
+            } message: { Text(sources.error ?? "") }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingFilters = true } label: {
@@ -326,7 +340,7 @@ struct SourceImage: View {
             } else if error != nil {
                 VStack(spacing: 12) {
                     Image(systemName: "photo.badge.exclamationmark")
-                    if !fill { Text(error ?? "Couldn’t load page").font(.caption).multilineTextAlignment(.center) }
+                    if !fill { Text(error ?? "Couldn’t load page").font(Design.font(.caption)).multilineTextAlignment(.center) }
                     Button("Retry") {
                         if let onRetry { onRetry() } else { retry += 1 }
                     }.frame(minHeight: 44)

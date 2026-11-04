@@ -16,7 +16,7 @@ struct ReaderView: View {
     var resumePosition = true
     @State private var chapter = 1
     @State private var page = 0
-    @State private var pageCount = 4
+    @State private var pageCount = 1
     @State private var controls = true
     @State private var hideTask: Task<Void, Never>?
     @State private var document: PDFDocument?
@@ -48,8 +48,8 @@ struct ReaderView: View {
                             if let document, let pdfPage = document.page(at: index) {
                                 PDFPageView(page: pdfPage, onTap: toggleControls)
                             } else {
-                                SampleMangaPage(manga: manga, chapter: chapter, page: index)
-                                    .contentShape(Rectangle()).onTapGesture { toggleControls() }
+                                ContentUnavailableView("Page unavailable", systemImage: "doc.questionmark")
+                                    .foregroundStyle(.white)
                             }
                         }.tag(index).contentShape(Rectangle())
                             .accessibilityAction(named: "Show reading controls") { revealControls() }
@@ -69,8 +69,8 @@ struct ReaderView: View {
                         Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 48, height: 48).glassSurface(radius: 24, interactive: true) }
                             .accessibilityLabel("Close reader")
                         VStack(spacing: 4) {
-                            Text(manga.title).font(.subheadline.weight(.semibold)).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                            Text("Chapter \(chapter)").font(.caption).foregroundStyle(.secondary)
+                            Text(manga.title).font(Design.font(.subheadline).weight(.semibold)).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                            Text("Chapter \(chapter)").font(Design.font(.caption)).foregroundStyle(.secondary)
                         }.multilineTextAlignment(.center).padding(.horizontal, 16).padding(.vertical, 10)
                             .frame(maxWidth: .infinity, minHeight: 48).glassSurface(radius: 24)
                         Button { showChapters = true } label: { Image(systemName: "list.bullet").frame(width: 48, height: 48).glassSurface(radius: 24, interactive: true) }
@@ -87,9 +87,9 @@ struct ReaderView: View {
                         Button { previousPage() } label: { Image(systemName: "chevron.backward").frame(width: 44, height: 44) }
                             .disabled(page == 0 && chapter == 1).accessibilityLabel("Previous page")
                         VStack(spacing: 2) {
-                            Text("\(page + 1) of \(pageCount)").font(.subheadline.monospacedDigit().weight(.medium))
+                            Text("\(page + 1) of \(pageCount)").font(Design.font(.subheadline).monospacedDigit().weight(.medium))
                             Text(page == pageCount - 1 ? (chapter == manga.chapterCount ? "End of story" : "Next chapter →") : "PAGE")
-                                .font(.caption2).foregroundStyle(.secondary)
+                                .font(Design.font(.caption2)).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity)
                         Button { nextPage() } label: { Image(systemName: "chevron.forward").frame(width: 44, height: 44) }
                             .accessibilityLabel(page == pageCount - 1 ? "Finish chapter" : "Next page")
@@ -111,7 +111,7 @@ struct ReaderView: View {
                 document = PDFDocument(url: url)
                 pageCount = document?.pageCount ?? 0
                 loadError = document == nil || pageCount == 0 || document?.isLocked == true
-            }
+            } else { loadError = true }
             if resumePosition, let position = store.positions[manga.id], position.chapter == chapter {
                 page = position.normalized(chapterCount: manga.chapterCount, actualPageCount: pageCount).page
             }
@@ -226,37 +226,6 @@ struct PDFPageView: UIViewRepresentable {
     }
 }
 
-// Original illustrated previews. Real imported pages use PDFKit above.
-struct SampleMangaPage: View {
-    let manga: Manga
-    let chapter: Int
-    let page: Int
-    var body: some View {
-        ScrollView(.vertical) {
-            VStack(spacing: 10) {
-                HStack { Text("SUMI ORIGINAL").tracking(3); Spacer(); Text("\(chapter) / \(page + 1)") }
-                    .font(.system(size: 9, weight: .medium)).foregroundStyle(.black.opacity(0.55))
-                panel(height: 300, offset: page % 2 == 0 ? .top : .bottom)
-                HStack(spacing: 10) {
-                    panel(height: 180, offset: .leading)
-                    panel(height: 180, offset: .trailing)
-                }
-                Text(["Somewhere above the sleeping city, a light was still burning.", "The rooftops remembered every step. Even the ones we had forgotten.", "No map could tell me where that lantern would lead.", "And for the first time, I was in no hurry to find out."][page % 4])
-                    .font(.system(.body, design: .serif)).foregroundStyle(.black).multilineTextAlignment(.center)
-                    .padding(.horizontal, 12).padding(.top, 8)
-            }.padding(14).frame(maxWidth: .infinity)
-        }.background(Color(red: 0.93, green: 0.91, blue: 0.87))
-            .scrollBounceBehavior(.basedOnSize).frame(maxWidth: Design.readingWidth)
-            .accessibilityLabel("Sample chapter \(chapter), page \(page + 1). Illustrated moonlit rooftops.")
-    }
-    private func panel(height: CGFloat, offset: Alignment) -> some View {
-        GeometryReader { geometry in
-                Image(manga.artResourceName, bundle: .module).resizable().scaledToFill().saturation(0)
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: offset).clipped()
-        }.frame(height: max(20, height)).border(.black.opacity(0.85), width: 1)
-    }
-}
-
 /// Keeps page seeking and saved progress shared between continuous and paged reading.
 struct VerticalReaderPages<Content: View>: View {
     let count: Int
@@ -300,7 +269,7 @@ struct ReaderModeButton: View {
         Button { verticalReading.toggle() } label: {
             Label(verticalReading ? "Vertical scrolling" : "Paged reading",
                   systemImage: verticalReading ? "arrow.down" : "book.pages")
-                .font(.subheadline)
+                .font(Design.font(.subheadline))
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .accessibilityHint(verticalReading ? "Switch to paged reading" : "Switch to vertical scrolling")

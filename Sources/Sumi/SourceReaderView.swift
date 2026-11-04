@@ -12,6 +12,9 @@ struct SourceMangaDetailView: View {
     private var reference: RemoteMangaReference { manga.remote! }
     private var source: InstalledSource? { sources.installed.first { $0.id == reference.sourceID } }
     private var key: String { "\(source.map { String($0.manifest.hashValue) } ?? "removed"):\(retry)" }
+    private var saveTarget: Manga {
+        loading || error != nil ? library.remoteTitles.first(where: { $0.id == manga.id }) ?? manga : resolved
+    }
     private var resolved: Manga {
         var value = manga
         value.chapterCount = max(1, chapters.count)
@@ -24,7 +27,8 @@ struct SourceMangaDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 CoverArt(manga: manga).frame(height: 340).clipShape(RoundedRectangle(cornerRadius: Design.corner))
                 Text(manga.title).font(Design.title).accessibilityAddTraits(.isHeader)
-                Text(manga.author).font(.headline).foregroundStyle(.secondary)
+                Text(manga.author).font(Design.font(.headline)).foregroundStyle(.secondary)
+                SaveMangaButton(manga: saveTarget)
                 if let source { Link(source.manifest.name, destination: source.manifest.website) }
                 Text(manga.synopsis).foregroundStyle(.secondary).lineSpacing(4)
                 if loading { ProgressView("Loading chapters…") }
@@ -46,10 +50,10 @@ struct SourceMangaDetailView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(chapter.title).foregroundStyle(.primary)
-                                        if !chapter.credit.isEmpty { Text(chapter.credit).font(.caption).foregroundStyle(.secondary) }
+                                        if !chapter.credit.isEmpty { Text(chapter.credit).font(Design.font(.caption)).foregroundStyle(.secondary) }
                                     }
                                     Spacer()
-                                    Image(systemName: "chevron.right").font(.caption)
+                                    Image(systemName: "chevron.right").font(Design.font(.caption))
                                 }.frame(minHeight: 60).padding(.vertical, 8).contentShape(Rectangle())
                             }.buttonStyle(PressStyle())
                             Divider()
@@ -59,14 +63,6 @@ struct SourceMangaDetailView: View {
             }.padding(Design.spacing).frame(maxWidth: 840).frame(maxWidth: .infinity)
         }.pageBackground().navigationTitle(manga.title).navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { library.toggleSaved(resolved) } label: {
-                        Image(systemName: library.savedIDs.contains(manga.id) ? "bookmark.fill" : "bookmark")
-                    }.disabled(loading || error != nil)
-                        .accessibilityLabel(library.savedIDs.contains(manga.id) ? "Remove from library" : "Add to library")
-                }
-            }
             .task(id: key) {
                 loading = true; error = nil
                 do {
@@ -130,8 +126,8 @@ struct SourceReaderView: View {
             if loading { ProgressView("Loading chapter…").tint(.white) }
             else if let error {
                 VStack(spacing: 20) {
-                    Text("Couldn’t load this chapter").font(.headline)
-                    Text(error).font(.subheadline).multilineTextAlignment(.center)
+                    Text("Couldn’t load this chapter").font(Design.font(.headline))
+                    Text(error).font(Design.font(.subheadline)).multilineTextAlignment(.center)
                     Button("Try again") { retry += 1 }.buttonStyle(.bordered)
                 }.padding()
             } else if verticalReading {
@@ -167,8 +163,8 @@ struct SourceReaderView: View {
                     HStack(spacing: 12) {
                         Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 48, height: 48) }.accessibilityLabel("Close reader")
                         VStack(spacing: 4) {
-                            Text(manga.title).font(.headline).lineLimit(2)
-                            Text(chapters[chapter - 1].title).font(.caption).lineLimit(2)
+                            Text(manga.title).font(Design.font(.headline)).lineLimit(2)
+                            Text(chapters[chapter - 1].title).font(Design.font(.caption)).lineLimit(2)
                         }.frame(maxWidth: .infinity)
                         Button { choosingChapter = true } label: { Image(systemName: "list.bullet").frame(width: 48, height: 48) }.accessibilityLabel("Choose chapter")
                     }.padding(8).glassSurface(radius: 28).padding().frame(maxWidth: 680)

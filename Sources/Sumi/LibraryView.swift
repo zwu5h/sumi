@@ -34,23 +34,19 @@ struct LibraryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "water.waves").foregroundStyle(Design.accent)
-                        Text("Sumi").font(.system(.title2, design: .rounded, weight: .bold)).foregroundStyle(Design.accent)
-                        Spacer()
-                    }.accessibilityElement(children: .combine)
+                    GlassSearch(text: $query, prompt: "Search collection")
                     if let progress = store.importProgress {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text(store.isCancellingImport ? "Stopping import…" : "Importing \(min(progress.completed + 1, progress.total)) of \(progress.total)")
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(Design.font(.subheadline).weight(.semibold))
                                 Spacer()
                                 Button("Cancel", role: .cancel) { store.cancelImport() }
                                     .frame(minWidth: 44, minHeight: 44)
                                     .disabled(store.isCancellingImport)
                                     .accessibilityLabel("Cancel PDF import")
                             }
-                            Text(progress.currentFile).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(progress.currentFile).font(Design.font(.caption)).foregroundStyle(.secondary).lineLimit(1)
                             ProgressView(value: progress.fraction).accessibilityLabel("PDF import progress")
                         }.padding(18).glassSurface()
                     }
@@ -60,7 +56,7 @@ struct LibraryView: View {
                     SelectionRail(items: ShelfFilter.allCases.map(\.rawValue), selection: Binding(
                         get: { filter.rawValue }, set: { filter = ShelfFilter(rawValue: $0) ?? .all }))
                     HStack(alignment: .firstTextBaseline) {
-                        SectionHeading(title: filter == .all ? "On your shelf" : filter.rawValue, subtitle: "\(books.count) stories · always within reach")
+                        SectionHeading(title: "\(books.count) titles")
                         Menu {
                             Picker("Show", selection: $filter) {
                                 ForEach(ShelfFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -71,7 +67,7 @@ struct LibraryView: View {
                         }.accessibilityLabel("Filter and sort collection")
                     }
                     if books.isEmpty {
-                        ContentUnavailableView(query.isEmpty ? "A little room for a new story" : "No matching stories", systemImage: "books.vertical", description: Text(query.isEmpty ? "Find a title in Discover, or import a manga PDF." : "Try another title or change your filters."))
+                        ContentUnavailableView(query.isEmpty ? "No titles" : "No matches", systemImage: "books.vertical", description: Text(query.isEmpty ? "Add titles from Discover or import a PDF with +." : "Try another title or filter."))
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 240 : 145, maximum: 300), spacing: 16)], alignment: .leading, spacing: 26) {
                             ForEach(books) { manga in
@@ -82,18 +78,11 @@ struct LibraryView: View {
                             }
                         }
                     }
-                    Text("A quiet place for your next chapter.")
-                        .font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 }.padding(Design.spacing).frame(maxWidth: Design.contentWidth)
                     .frame(maxWidth: .infinity)
             }
             .pageBackground()
             .navigationTitle("Library")
-            .safeAreaInset(edge: .top, spacing: 0) {
-                GlassSearch(text: $query, prompt: "Search your collection")
-                    .padding(.horizontal, Design.spacing).padding(.vertical, 8)
-                    .frame(maxWidth: Design.contentWidth)
-            }
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -129,15 +118,15 @@ struct ContinueFeature: View {
         ZStack(alignment: .bottomLeading) {
             CoverArt(manga: manga)
             VStack(alignment: .leading, spacing: 12) {
-                Text(store.positions[manga.id] == nil ? "YOUR NEXT ESCAPE" : store.isComplete(manga) ? "READ AGAIN" : "CONTINUE READING")
-                    .font(.caption2.weight(.bold)).tracking(2).foregroundStyle(Design.accent)
+                Text(store.positions[manga.id] == nil ? "START READING" : store.isComplete(manga) ? "READ AGAIN" : "CONTINUE READING")
+                    .font(Design.font(.caption2).weight(.bold)).tracking(2).foregroundStyle(Design.accent)
                 Text(manga.title).font(Design.title).tracking(-0.7).foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Text("Chapter \(store.isComplete(manga) ? 1 : store.positions[manga.id]?.chapter ?? 1) · \(manga.genre)")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(Design.font(.subheadline)).foregroundStyle(.secondary)
                     Spacer()
-                    Image(systemName: "book.pages.fill").font(.headline).foregroundStyle(Design.accent)
+                    Image(systemName: "book.pages.fill").font(Design.font(.headline)).foregroundStyle(Design.accent)
                         .frame(width: 44, height: 44).glassSurface(radius: 22)
                 }
                 if store.positions[manga.id] != nil {

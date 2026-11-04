@@ -5,6 +5,7 @@ import CryptoKit
 final class SourceStore: ObservableObject {
     @Published private(set) var repositories: [SourceRepository] = []
     @Published private(set) var installed: [InstalledSource] = []
+    @Published private(set) var nsfwSourceIDs: Set<String> = []
     @Published private(set) var busy = false
     @Published var error: String?
     private let file: URL
@@ -12,6 +13,7 @@ final class SourceStore: ObservableObject {
     private struct State: Codable {
         var repositories: [SourceRepository]
         var installed: [InstalledSource]
+        var nsfwSourceIDs: Set<String>?
     }
 
     init() {
@@ -31,6 +33,7 @@ final class SourceStore: ObservableObject {
             }
             repositories = state.repositories
             installed = state.installed
+            nsfwSourceIDs = state.nsfwSourceIDs ?? []
         } catch { self.error = "Couldn’t restore sources: \(error.localizedDescription)" }
     }
 
@@ -38,12 +41,27 @@ final class SourceStore: ObservableObject {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func commit(repositories: [SourceRepository], installed: [InstalledSource]) throws {
-        let data = try JSONEncoder().encode(State(repositories: repositories, installed: installed))
+    private func commit(repositories: [SourceRepository], installed: [InstalledSource], nsfwSourceIDs: Set<String>? = nil) throws {
+        let preferences = (nsfwSourceIDs ?? self.nsfwSourceIDs).intersection(installed.map(\.id))
+        let data = try JSONEncoder().encode(State(repositories: repositories, installed: installed, nsfwSourceIDs: preferences))
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: file, options: .atomic)
         self.repositories = repositories
         self.installed = installed
+        self.nsfwSourceIDs = preferences
+    }
+
+    func setAllowNSFW(_ allowed: Bool, sourceID: String) {
+        do {
+            _ = try source(sourceID)
+            var preferences = nsfwSourceIDs
+            if allowed { preferences.insert(sourceID) } else { preferences.remove(sourceID) }
+            try commit(repositories: repositories, installed: installed, nsfwSourceIDs: preferences)
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func contentInput(sourceID: String) -> [String: String] {
+        ["allowNSFW": nsfwSourceIDs.contains(sourceID) ? "true" : "false"]
     }
 
     func addRepository(_ text: String) async {
@@ -117,6 +135,7 @@ final class SourceStore: ObservableObject {
     func search(sourceID: String, query: String, selection: SourceSearchSelection = .init()) async throws -> [Manga] {
         let source = try source(sourceID)
         var input = selection.input
+        input.merge(contentInput(sourceID: sourceID)) { _, value in value }
         input["query"] = query
         let titles = try await SourceRuntime(hosts: source.manifest.hosts).call("search", input: input, source: source, as: [SourceTitle].self)
         guard titles.count <= 200, Set(titles.map(\.id)).count == titles.count,
@@ -130,7 +149,9 @@ final class SourceStore: ObservableObject {
 
     func chapters(_ reference: RemoteMangaReference) async throws -> [SourceChapter] {
         let source = try source(reference.sourceID)
-        let chapters = try await SourceRuntime(hosts: source.manifest.hosts).call("chapters", input: ["mangaID": reference.mangaID], source: source, as: [SourceChapter].self)
+        var input = contentInput(sourceID: reference.sourceID)
+        input["mangaID"] = reference.mangaID
+        let chapters = try await SourceRuntime(hosts: source.manifest.hosts).call("chapters", input: input, source: source, as: [SourceChapter].self)
         guard !chapters.isEmpty, chapters.count <= 10_000, Set(chapters.map(\.id)).count == chapters.count,
               chapters.allSatisfy({ !$0.id.isEmpty && !$0.title.isEmpty }) else {
             throw SourceError.invalid("This title has no readable chapters or returned invalid chapter data.")
@@ -141,7 +162,10 @@ final class SourceStore: ObservableObject {
 
     func pages(_ reference: RemoteMangaReference, chapterID: String) async throws -> [URL] {
         let source = try source(reference.sourceID)
-        let pages = try await SourceRuntime(hosts: source.manifest.hosts).call("pages", input: ["mangaID": reference.mangaID, "chapterID": chapterID], source: source, as: [URL].self)
+        var input = contentInput(sourceID: reference.sourceID)
+        input["mangaID"] = reference.mangaID
+        input["chapterID"] = chapterID
+        let pages = try await SourceRuntime(hosts: source.manifest.hosts).call("pages", input: input, source: source, as: [URL].self)
         guard !pages.isEmpty, pages.count <= 500 else { throw SourceError.invalid("This chapter returned no pages or too many pages.") }
         for page in pages { try SourcePolicy.check(page, hosts: source.manifest.hosts) }
         try ensureCurrent(source)

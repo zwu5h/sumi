@@ -15,6 +15,15 @@ increased contrast retain opaque accessible surfaces.
 
 The reference is a design artifact, not a bitmap displayed behind app controls.
 The app draws its adaptive background and interactive controls using SwiftUI.
-Existing manga titles and artwork remain the app's actual sample content.
+The app bundles no demo titles or artwork; covers come from imported PDFs or sources.
 
 The image-generation prompts are saved alongside the reference for reproducibility.
+
+UI typography uses the iOS-bundled Avenir Next family with semantic Dynamic Type
+scaling. Decorative slogans and duplicate screen headings have been removed.
+Library and Discover search fields belong to the scroll content, including bounce.
+
+The app logo is generated with built-in Imagegen: glass manga pages forming an S,
+on a medium aqua/mint background. The dark-blue and near-white drafts were rejected.
+The final prompt is in `sumi-logo-prompt.txt`, the 1024px master in
+`../Sources/Sumi/Resources/sumi-logo.png`, and launcher sizes in `AppIcons/`.

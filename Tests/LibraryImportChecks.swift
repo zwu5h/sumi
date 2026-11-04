@@ -45,6 +45,7 @@ struct LibraryImportChecks {
         let locked = try fixture("Locked", "locked")
         let empty = try fixture("Empty", "empty")
         let store = LibraryStore()
+        precondition(store.library.isEmpty && store.catalog.isEmpty && store.savedIDs.isEmpty, "Fresh installs must not include demos")
         store.imported = []
         store.savedIDs = []
         store.positions = [:]

@@ -1,3 +1,10 @@
 version: 1
 bundleID: com.sumi.reader
 infoPath: Info.plist
+iconPath: Sources/Sumi/Resources/sumi-logo.png
+resources:
+  - design/AppIcons/AppIcon60x60@2x.png
+  - design/AppIcons/AppIcon60x60@3x.png
+  - design/AppIcons/AppIcon76x76@1x.png
+  - design/AppIcons/AppIcon76x76@2x.png
+  - design/AppIcons/AppIcon83.5x83.5@2x.png

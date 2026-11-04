@@ -30,17 +30,19 @@ SUMI_DISABLE_LIQUID_GLASS=1 python3 scripts/verify_build.py --expect-glass fallb
 
 ## Experience
 
-The November 4 redesign follows the accepted [Frutiger Aero reference](design/reference.png): abstract, softly blended sky-blue, aqua and mint backgrounds, blue accents, rounded display typography and luminous translucent glass. No scenic wallpaper is used. `DesignSystem.swift` draws the background with adaptive radial gradients and centralizes typography, materials, accessibility fallbacks and spacing. See [design notes](design/README.md). New installations default to light appearance; saved preferences remain respected.
+The November 4 redesign follows the accepted [Frutiger Aero reference](design/reference.png): abstract, softly blended sky-blue, aqua and mint backgrounds, blue accents, Avenir Next typography and luminous translucent glass. No scenic wallpaper is used. `DesignSystem.swift` draws the background with adaptive radial gradients and centralizes typography, materials, accessibility fallbacks and spacing. See [design notes](design/README.md). New installations default to light appearance; saved preferences remain respected.
 
-Library and Discover have floating glass search fields and animated selection rails. The library features a large reading cover and an adaptive cover grid. Discover adds a full-width editorial spotlight. Details use full-width artwork, a faint artwork-derived backdrop, a title that moves into the navigation bar as the header leaves the viewport, and a floating reading action. Downloads, Updates and Settings share editorial headings; theme choices include visual previews. Reader controls are separate glass islands at the top and a width-limited page scrubber below. Controls stay visible while scrubbing, and chapter changes crossfade when Reduce Motion is off.
+Library and Discover have glass search fields inside their scroll content, so pulling down moves the search field with the collection. The library uses animated filter rails, a large reading cover and an adaptive cover grid. Discover lists installed sources and opens their catalogs. Details use full-width artwork, a faint artwork-derived backdrop, a title that moves into the navigation bar as the header leaves the viewport, and a floating reading action. Screens use concise functional headings; theme choices include visual previews. Reader controls are separate glass islands at the top and a width-limited page scrubber below. Controls stay visible while scrubbing, and chapter changes crossfade when Reduce Motion is off.
+
+The generated Sumi logo uses glass manga pages forming an S against a medium aqua/mint background. It appears in Settings and as the launcher icon. The master asset is `Sources/Sumi/Resources/sumi-logo.png`; launcher sizes live in `design/AppIcons`. The built-in Imagegen edit prompt is saved in `design/sumi-logo-prompt.txt`.
 
 Artwork headers grow with their text rather than clipping large Dynamic Type content. The theme selector becomes one column at accessibility sizes. Native `TabView` continues to own navigation, safe areas, selection and accessibility, using system Liquid Glass on supported systems.
 
 - Library: cinematic featured artwork, adaptive artwork grid, native search, All/Reading/Unread/Completed filters, title sorting, PDF import, reading progress.
-- Discover: original sample collection, genre filters, native cover zoom transitions when supported and Reduce Motion is off.
+- Discover: installed sources, source-name search and repository management; manga details have a visible Save to library button.
 - Details: artwork-derived backdrop, collapsing cover, metadata, chapter list, library bookmark, floating reading action.
 - Reader: paged reading or continuous vertical scrolling (switch in the reader or Settings → Reading), right-to-left option for paged mode, PDFKit pinch zoom for imported PDFs, chapter chooser, page slider, saved position, four-second auto-hide controls, optional screen-awake mode.
-- Updates: available chapters for the clearly labeled sample collection.
+- Updates: saved online titles; opening a title refreshes its chapter list.
 - Downloads: locally imported PDFs, offline reading, confirmed deletion.
 - Settings: light default, dark/system appearance, reader preferences, accessibility information.
 
@@ -81,7 +83,7 @@ Sumi Source API v1; Paperback extensions cannot be installed unchanged.
 | `ReadingPosition.swift` | Saved reading position validation and progress calculations |
 | `LibraryView.swift` | Collection, search, filtering and import |
 | `MangaDetailView.swift` | Artwork header, metadata, chapters and reading launch |
-| `ReaderView.swift` | Reader state, controls, PDFKit and sample previews |
+| `ReaderView.swift` | Reader state, controls and PDFKit |
 | `CollectionScreens.swift` | Discover, Updates, Downloads and Settings |
 | `SourceModels.swift` | Repository format, source data and URL permissions |
 | `SourceStore.swift` | Installation, integrity checks, persistence and source operations |
@@ -94,7 +96,7 @@ Imported PDFs and generated thumbnails live in the app Documents directory. Libr
 
 ## Content scope and verification limits
 
-The three bundled titles, cover illustrations and panel previews are original sample content. They demonstrate the interface; they are not complete manga books. Import your own unlocked PDF to read a full document, or install a source to read online. No third-party source or content catalog is bundled. Automatic release feeds, online offline-downloads and CBZ/CBR import are not implemented.
+The app starts with an empty library and contains no demo titles, covers or preview pages. Upgrading removes old bundled-demo bookmarks and reading positions while retaining imported PDFs and online manga. Import an unlocked PDF or install a source to read online. The original demo artwork lives only in `examples/sumi-originals/artwork` for development source fixtures. No third-party source or content catalog is bundled. Automatic release feeds, online offline-downloads and CBZ/CBR import are not implemented.
 
 Build checks verify the arm64 executable, deployment target, bundle metadata, artwork resources and IPA packaging. This Linux/Windows host cannot run Apple's iOS Simulator, and no iPhone was connected during verification. On-device visual and interaction QA remains necessary before release.
 

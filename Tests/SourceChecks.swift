@@ -56,14 +56,14 @@ enum SourceChecks {
         {"id":"legacy","title":"Old PDF","author":"Local","synopsis":"","genre":"Imported","palette":0,"chapterCount":1,"fileName":"old.pdf"}
         """.utf8)
         let local = try JSONDecoder().decode(Manga.self, from: legacy)
-        precondition(local.remote == nil && !local.isSample && local.fileName == "old.pdf")
+        precondition(local.remote == nil && local.fileName == "old.pdf")
 
         let store = LibraryStore()
         let first = SourceChapter(id: "one", title: "One", credit: "Creator")
         let second = SourceChapter(id: "two", title: "Two", credit: "Creator")
         var manga = Manga(id: "source:test:book", title: "Remote book", author: "Creator", synopsis: "", genre: "Test", chapterCount: 2,
                           remote: RemoteMangaReference(sourceID: "test", mangaID: "book", cover: nil, chapters: [first, second]))
-        precondition(!manga.isSample && manga.documentURL == nil)
+        precondition(manga.remote != nil && manga.documentURL == nil)
         store.rememberRemote(manga)
         store.toggleSaved(manga)
         store.record(manga, chapter: 2, page: 1, count: 4)
@@ -73,6 +73,19 @@ enum SourceChecks {
         let restored = LibraryStore()
         precondition(restored.library.contains { $0.id == manga.id })
         precondition(restored.remoteTitles.first { $0.id == manga.id }?.remote?.chapters == [second, first])
+        store.toggleSaved(manga)
+        precondition(!LibraryStore().library.contains { $0.id == manga.id }, "Unsaving must persist")
+        store.toggleSaved(manga)
+        let defaults = UserDefaults.standard
+        defaults.set(Array(store.savedIDs.union(["moon", "rain", "night"])), forKey: "savedIDs")
+        var legacyPositions = store.positions
+        legacyPositions["moon"] = ReadingPosition(page: 1, pageCount: 4)
+        defaults.set(try JSONEncoder().encode(legacyPositions), forKey: "positions")
+        let migrated = LibraryStore()
+        precondition(migrated.savedIDs.isDisjoint(with: ["moon", "rain", "night"]))
+        precondition(migrated.positions["moon"] == nil)
+        precondition(migrated.library.contains { $0.id == manga.id })
+        precondition(migrated.imported.count == store.imported.count)
         manga.remote?.chapters = [first]
         store.rememberRemote(manga)
         precondition(store.positions[manga.id] == nil, "Removed chapter must not resume at an unrelated chapter")

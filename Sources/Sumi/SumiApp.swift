@@ -6,9 +6,18 @@ struct SumiApp: App {
     @StateObject private var sources = SourceStore()
     @AppStorage("appearance") private var appearance = "light"
 
+    init() {
+        let navigation = UINavigationBar.appearance()
+        navigation.largeTitleTextAttributes = [.font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(
+            for: UIFont(name: "AvenirNext-Bold", size: 34) ?? .preferredFont(forTextStyle: .largeTitle))]
+        navigation.titleTextAttributes = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(
+            for: UIFont(name: "AvenirNext-DemiBold", size: 17) ?? .preferredFont(forTextStyle: .headline))]
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
+                .font(Design.font(.body))
                 .environmentObject(library)
                 .environmentObject(sources)
                 .tint(Design.accent)

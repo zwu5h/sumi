@@ -11,9 +11,27 @@ enum Design {
     static let coverCorner: CGFloat = 12
     static let readingWidth: CGFloat = 840
     static let contentWidth: CGFloat = 1080
-    static let title = Font.system(.largeTitle, design: .rounded, weight: .bold)
-    static let eyebrow = Font.caption2.weight(.semibold)
-    static let section = Font.title2.weight(.semibold)
+    // Avenir Next ships with iOS; semantic scaling keeps Dynamic Type intact.
+    static func font(_ style: Font.TextStyle) -> Font {
+        let size: CGFloat
+        switch style {
+        case .largeTitle: size = 34
+        case .title: size = 28
+        case .title2: size = 22
+        case .title3: size = 20
+        case .headline, .body: size = 17
+        case .callout: size = 16
+        case .subheadline: size = 15
+        case .footnote: size = 13
+        case .caption: size = 12
+        case .caption2: size = 11
+        @unknown default: size = 17
+        }
+        return .custom(style == .headline ? "AvenirNext-DemiBold" : "AvenirNext-Regular", size: size, relativeTo: style)
+    }
+    static let title = Font.custom("AvenirNext-Bold", size: 34, relativeTo: .largeTitle)
+    static let eyebrow = font(.caption2).weight(.semibold)
+    static let section = Font.custom("AvenirNext-DemiBold", size: 22, relativeTo: .title2)
     static func surface(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(red: 0.055, green: 0.16, blue: 0.23) : Color(red: 0.88, green: 0.98, blue: 1)
     }
@@ -142,7 +160,7 @@ struct SectionHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(Design.section).tracking(-0.6).accessibilityAddTraits(.isHeader)
-            if let subtitle { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
+            if let subtitle { Text(subtitle).font(Design.font(.subheadline)).foregroundStyle(.secondary) }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -171,7 +189,7 @@ struct GlassSearch: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(width: 44, height: 44)
                 }.accessibilityLabel("Clear search")
             }
-        }.font(.body).padding(.leading, 18).padding(.trailing, text.isEmpty ? 18 : 2)
+        }.font(Design.font(.body)).padding(.leading, 18).padding(.trailing, text.isEmpty ? 18 : 2)
             .frame(minHeight: 52).glassSurface(radius: 28)
     }
 }
@@ -190,7 +208,7 @@ struct SelectionRail: View {
                     Button {
                         withAnimation(Motion(reduced: reduced).standard) { selection = item }
                     } label: {
-                        Text(item).font(.subheadline.weight(selection == item ? .semibold : .regular))
+                        Text(item).font(Design.font(.subheadline).weight(selection == item ? .semibold : .regular))
                             .foregroundStyle(selection == item ? Design.accent : Color.primary)
                             .padding(.horizontal, 18).frame(minHeight: 44)
                             .background {
@@ -207,21 +225,13 @@ struct SelectionRail: View {
     }
 }
 
-struct EditorialHeader: View {
-    let eyebrow: String
-    let title: String
-    let subtitle: String
-    var symbol: String? = nil
+struct AppLogo: View {
+    var size: CGFloat = 32
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let symbol {
-                Image(systemName: symbol).font(.title2).foregroundStyle(Design.accent)
-                    .frame(width: 56, height: 56).glassSurface(radius: 20).padding(.bottom, 6).accessibilityHidden(true)
-            }
-            Eyebrow(text: eyebrow)
-            Text(title).font(Design.title).tracking(-0.7).accessibilityAddTraits(.isHeader)
-            Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineSpacing(3)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
+        Image("sumi-logo", bundle: .module).resizable().scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.23))
+            .accessibilityHidden(true)
     }
 }
 
@@ -244,10 +254,25 @@ struct CoverArt: View {
                 } else if let url = manga.thumbnailURL, let image = UIImage(contentsOfFile: url.path) {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
-                    Image(manga.artResourceName, bundle: .module).resizable().scaledToFill()
+                    Rectangle().fill(Design.accent.opacity(0.12))
+                        .overlay { Image(systemName: "book.closed").font(.largeTitle).foregroundStyle(Design.accent) }
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.accessibilityHidden(true)
+    }
+}
+
+struct SaveMangaButton: View {
+    @EnvironmentObject private var library: LibraryStore
+    let manga: Manga
+    private var saved: Bool { library.savedIDs.contains(manga.id) }
+    var body: some View {
+        Button { library.toggleSaved(manga) } label: {
+            Label(saved ? "Saved in library" : "Save to library", systemImage: saved ? "bookmark.fill" : "bookmark")
+                .font(Design.font(.headline))
+                .frame(maxWidth: .infinity, minHeight: 48)
+        }.buttonStyle(.bordered)
+            .accessibilityHint(saved ? "Removes this manga from your library" : "Adds this manga to your library")
     }
 }
 
@@ -287,8 +312,8 @@ struct MangaTile: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Design.coverCorner))
             VStack(alignment: .leading, spacing: 5) {
-                Text(manga.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
-                Text(manga.author).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(manga.title).font(Design.font(.subheadline).weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+                Text(manga.author).font(Design.font(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         }.glassSurface(radius: Design.coverCorner).accessibilityElement(children: .combine)
     }

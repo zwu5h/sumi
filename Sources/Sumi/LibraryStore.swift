@@ -15,12 +15,9 @@ struct Manga: Identifiable, Codable, Hashable {
     var author: String
     var synopsis: String
     var genre: String
-    var palette: Int = 0
     var chapterCount: Int = 6
     var fileName: String? = nil
     var remote: RemoteMangaReference? = nil
-    var isSample: Bool { fileName == nil && remote == nil }
-    var artResourceName: String { palette == 1 ? "rain" : palette == 2 ? "night" : "moonlit" }
     var documentURL: URL? { fileName.map { LibraryStore.documents.appendingPathComponent($0) } }
     var thumbnailURL: URL? { fileName.map { LibraryStore.documents.appendingPathComponent($0 + ".png") } }
 }
@@ -32,7 +29,7 @@ final class LibraryStore: ObservableObject {
     }
     @Published var imported: [Manga] = []
     @Published private(set) var remoteTitles: [Manga] = []
-    @Published var savedIDs: Set<String> = ["moon", "rain"]
+    @Published var savedIDs: Set<String> = []
     @Published var positions: [String: ReadingPosition] = [:]
     @Published var error: String?
     @Published private(set) var importProgress: PDFImportProgress?
@@ -49,21 +46,21 @@ final class LibraryStore: ObservableObject {
         if isCancellingImport { throw CancellationError() }
     }
 
-    static let samples: [Manga] = [
-        Manga(id: "moon", title: "Under a Paper Moon", author: "Sumi Studio", synopsis: "Above a city that has forgotten the stars, a wandering cartographer follows a trail of paper lanterns. A quiet journey through memory, rooftops, and the spaces between words.", genre: "Adventure", chapterCount: 6),
-        Manga(id: "rain", title: "The Sound of Rain", author: "Sumi Studio", synopsis: "An abandoned station. A letter without a name. Two strangers return to a mountain town with a story neither of them remembers.", genre: "Slice of life", palette: 1, chapterCount: 4),
-        Manga(id: "night", title: "Where the Night Ends", author: "Sumi Studio", synopsis: "At the edge of the sleeping city, a keeper of lanterns discovers that every light holds a story.", genre: "Fantasy", palette: 2, chapterCount: 5)
-    ]
-
     init() {
         let defaults = UserDefaults.standard
         if let data = defaults.data(forKey: "imported"), let items = try? JSONDecoder().decode([Manga].self, from: data) { imported = items }
         if let data = defaults.data(forKey: "remoteTitles"), let items = try? JSONDecoder().decode([Manga].self, from: data) { remoteTitles = items }
         if let ids = defaults.stringArray(forKey: "savedIDs") { savedIDs = Set(ids) }
         if let data = defaults.data(forKey: "positions"), let items = try? JSONDecoder().decode([String: ReadingPosition].self, from: data) { positions = items }
+        // Remove only the retired bundled demos; imported and online titles stay intact.
+        for id in ["moon", "rain", "night"] where !catalog.contains(where: { $0.id == id }) {
+            savedIDs.remove(id)
+            positions.removeValue(forKey: id)
+        }
+        persist()
     }
 
-    var catalog: [Manga] { imported + remoteTitles + Self.samples }
+    var catalog: [Manga] { imported + remoteTitles }
     var library: [Manga] { catalog.filter { savedIDs.contains($0.id) } }
     var recent: Manga? {
         library.filter { positions[$0.id] != nil && !isComplete($0) }
@@ -77,8 +74,12 @@ final class LibraryStore: ObservableObject {
         positions[manga.id]?.isComplete(chapterCount: manga.chapterCount) ?? false
     }
     func toggleSaved(_ manga: Manga) {
-        if manga.remote != nil { rememberRemote(manga) }
-        if savedIDs.contains(manga.id) { savedIDs.remove(manga.id) } else { savedIDs.insert(manga.id) }
+        if savedIDs.contains(manga.id) {
+            savedIDs.remove(manga.id)
+        } else {
+            if manga.remote != nil { rememberRemote(manga) }
+            savedIDs.insert(manga.id)
+        }
         persist()
     }
     func rememberRemote(_ manga: Manga) {
