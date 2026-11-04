@@ -78,9 +78,9 @@ proof that a repository is trustworthy.
 
 ## Source API v1
 
-A ready-to-install [MangaDex repository](../extensions/mangadex/README.md) is maintained
+A ready-to-install [MangaDex repository](https://github.com/zwu5h/sumi-extensions) is maintained
 separately from the app bundle, with German and English adapters. Its public index is
-`https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/repository.json`.
+`https://raw.githubusercontent.com/zwu5h/sumi-extensions/main/repository.json`.
 It requires the updated app with scoped subdomain permissions.
 
 Publish a single UTF-8 JavaScript file defining `const source = { ... }`. Bundle your
