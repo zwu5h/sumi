@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+xtool/
+.DS_Store
+.bsp/
+build*.log
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example

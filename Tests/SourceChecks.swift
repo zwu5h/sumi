@@ -1,0 +1,61 @@
+import Foundation
+
+enum SourceChecks {
+    @MainActor static func run() throws {
+        func rejects(_ operation: () throws -> Void) {
+            do { try operation(); preconditionFailure("Expected rejection") } catch { }
+        }
+        let allowed = ["api.example.org"]
+        try SourcePolicy.check(URL(string: "https://api.example.org/catalog")!, hosts: allowed)
+        for text in ["http://api.example.org/catalog", "file:///tmp/test", "https://api.example.org.evil.org/",
+                     "https://images.example.org/", "https://user:password@api.example.org/",
+                     "https://api.example.org:444/", "https://127.0.0.1/", "https://[::1]/", "https://device.local/"] {
+            rejects { try SourcePolicy.check(URL(string: text)!, hosts: allowed) }
+        }
+        let raw = """
+        {"schemaVersion":1,"name":"Test","extensions":[{"id":"org.example.test","name":"Test","version":"1.0","apiVersion":1,"script":"https://example.org/source.js","sha256":"\(String(repeating: "a", count: 64))","hosts":["api.example.org"],"website":"https://example.org/","author":"Test author"}]}
+        """
+        func index(_ text: String) throws -> RepositoryIndex {
+            try JSONDecoder().decode(RepositoryIndex.self, from: Data(text.utf8))
+        }
+        let valid = try index(raw)
+        try valid.validate()
+        for changed in [raw.replacingOccurrences(of: "\"apiVersion\":1", with: "\"apiVersion\":2"),
+                        raw.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":2"),
+                        raw.replacingOccurrences(of: "api.example.org", with: "*.example.org"),
+                        raw.replacingOccurrences(of: "api.example.org", with: "api..example.org"),
+                        raw.replacingOccurrences(of: "api.example.org", with: "127.0.0.1"),
+                        raw.replacingOccurrences(of: String(repeating: "a", count: 64), with: "wrong")] {
+            rejects { try index(changed).validate() }
+        }
+        rejects { try RepositoryIndex(schemaVersion: 1, name: "Duplicate", extensions: [valid.extensions[0], valid.extensions[0]]).validate() }
+
+        // Older local PDFs have no remote field; the existing library must still decode.
+        let legacy = Data("""
+        {"id":"legacy","title":"Old PDF","author":"Local","synopsis":"","genre":"Imported","palette":0,"chapterCount":1,"fileName":"old.pdf"}
+        """.utf8)
+        let local = try JSONDecoder().decode(Manga.self, from: legacy)
+        precondition(local.remote == nil && !local.isSample && local.fileName == "old.pdf")
+
+        let store = LibraryStore()
+        let first = SourceChapter(id: "one", title: "One", credit: "Creator")
+        let second = SourceChapter(id: "two", title: "Two", credit: "Creator")
+        var manga = Manga(id: "source:test:book", title: "Remote book", author: "Creator", synopsis: "", genre: "Test", chapterCount: 2,
+                          remote: RemoteMangaReference(sourceID: "test", mangaID: "book", cover: nil, chapters: [first, second]))
+        precondition(!manga.isSample && manga.documentURL == nil)
+        store.rememberRemote(manga)
+        store.toggleSaved(manga)
+        store.record(manga, chapter: 2, page: 1, count: 4)
+        manga.remote?.chapters = [second, first]
+        store.rememberRemote(manga)
+        precondition(store.positions[manga.id]?.chapter == 1 && store.positions[manga.id]?.page == 1)
+        let restored = LibraryStore()
+        precondition(restored.library.contains { $0.id == manga.id })
+        precondition(restored.remoteTitles.first { $0.id == manga.id }?.remote?.chapters == [second, first])
+        manga.remote?.chapters = [first]
+        store.rememberRemote(manga)
+        precondition(store.positions[manga.id] == nil, "Removed chapter must not resume at an unrelated chapter")
+        store.markUnread(manga)
+        print("PASS: repository validation, exact HTTPS host permissions, legacy PDF decoding, remote library persistence and stable chapter IDs")
+    }
+}
