@@ -1,5 +1,7 @@
 # Prüfung der Veröffentlichungsreife
 
+> Historischer Prüfstand vor den anschließenden Korrekturen. Aktuelle Änderungen, Regressionstests und verbleibende Grenzen: [security-fixes.md](security-fixes.md).
+
 Stand: 4. November 2026. Geprüft wurde der aktuelle Arbeitsstand einschließlich bereits vorhandener, nicht committeter Änderungen.
 
 Ergebnis: Build und vorhandene automatisierte Prüfungen bestehen. Für eine uneingeschränkte öffentliche Freigabe bleiben offene Punkte. Für den App Store ist der geprüfte Stand noch nicht bereit. Ein erfolgreicher Build bestätigt keine vollständige Sicherheit oder Funktionsfähigkeit auf einem Gerät.

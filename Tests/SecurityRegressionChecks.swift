@@ -23,6 +23,17 @@ enum SecurityRegressionChecks {
         let original = LibraryStore(defaults: defaults)
         await original.importPDF(fixture)
         let manga = original.imported[0]
+        let target = LibraryStore.documents.deletingLastPathComponent().appendingPathComponent("symlink-target.pdf")
+        let link = LibraryStore.documents.deletingLastPathComponent().appendingPathComponent("symlink-input.pdf")
+        try FileManager.default.copyItem(at: fixture, to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        await original.importPDF(link)
+        let copied = original.imported[0].documentURL!
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.removeItem(at: link)
+        precondition(FileManager.default.fileExists(atPath: copied.path))
+        precondition((try? FileManager.default.destinationOfSymbolicLink(atPath: copied.path)) == nil)
+        original.removeImport(original.imported[0])
         let valid = try JSONSerialization.jsonObject(with: JSONEncoder().encode(manga))
         let damaged = try JSONSerialization.data(withJSONObject: [valid, ["id": "broken"]])
         defaults.set(damaged, forKey: "imported")

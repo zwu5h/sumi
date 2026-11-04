@@ -1,5 +1,12 @@
 import Foundation
 
+enum SourceResult {
+    static func checked(_ value: String) throws -> String {
+        guard value.utf8.count <= 4_000_000 else { throw SourceError.invalid("The extension result is too large.") }
+        return value
+    }
+}
+
 enum SourceError: LocalizedError {
     case invalid(String)
     var errorDescription: String? { if case .invalid(let message) = self { return message }; return nil }

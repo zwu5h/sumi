@@ -7,6 +7,11 @@ enum SourceChecks {
             do { try operation(); preconditionFailure("Expected rejection") } catch { }
         }
         let allowed = ["api.example.org"]
+        let boundary = String(repeating: "é", count: 2_000_000)
+        let accepted = try SourceResult.checked(boundary)
+        precondition(accepted == boundary)
+        rejects { _ = try SourceResult.checked(boundary + "a") }
+        rejects { _ = try SourceResult.checked(String(repeating: "a", count: 4_000_001)) }
         for host in ["0x7f.0.0.1", "0x7f.1"] {
             rejects { try SourcePolicy.check(URL(string: "https://" + host + "/")!, hosts: [host]) }
         }

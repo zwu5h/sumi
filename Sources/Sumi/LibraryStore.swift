@@ -36,10 +36,11 @@ final class LibraryStore: ObservableObject {
         let legacy = manager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         try manager.createDirectory(at: documents, withIntermediateDirectories: true)
         guard legacy != documents, manager.fileExists(atPath: legacy.path) else { return }
-        for item in try manager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: [.isRegularFileKey]) {
+        for item in try manager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) {
             let name = item.lastPathComponent
             guard name == "sources-v1.json" || name.lowercased().hasSuffix(".pdf") || name.lowercased().hasSuffix(".pdf.png"),
-                  try item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+                  try item.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]).isRegularFile == true,
+                  try item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { continue }
             let target = documents.appendingPathComponent(name)
             // Never overwrite a newer private file or discard a conflicting legacy copy.
             if !manager.fileExists(atPath: target.path) { try manager.moveItem(at: item, to: target) }

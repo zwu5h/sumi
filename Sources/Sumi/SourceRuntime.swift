@@ -71,10 +71,11 @@ final class SourceRuntime: NSObject, WKScriptMessageHandlerWithReply, WKNavigati
                         webView.callAsyncJavaScript(body, arguments: ["operation": operation, "input": input, "code": source.code], in: nil, in: .page) { [weak self] result in
                             switch result {
                             case .success(let value):
-                                guard let string = value as? String, string.utf8.count <= 4_000_000 else {
+                                guard let string = value as? String else {
                                     self?.finish(.failure(SourceError.invalid("The extension returned invalid data."))); return
                                 }
-                                self?.finish(.success(string))
+                                do { self?.finish(.success(try SourceResult.checked(string))) }
+                                catch { self?.finish(.failure(error)) }
                             case .failure(let error): self?.finish(.failure(error))
                             }
                         }
