@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "Sumi · MangaDex sources",
+  "extensions": [
+    {
+      "id": "org.zwu5h.mangadex.de",
+      "name": "MangaDex · Deutsch",
+      "version": "1.0.0",
+      "apiVersion": 1,
+      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-de-6c7489e3246d2211.js",
+      "sha256": "6c7489e3246d2211d46ec6f129fc3a4e05bbc315f00f6c34a580892eaf90787b",
+      "hosts": [
+        "api.mangadex.org",
+        "uploads.mangadex.org",
+        "*.mangadex.network"
+      ],
+      "website": "https://mangadex.org/",
+      "author": "zwu5h · unofficial adapter"
+    },
+    {
+      "id": "org.zwu5h.mangadex.en",
+      "name": "MangaDex · English",
+      "version": "1.0.0",
+      "apiVersion": 1,
+      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-en-7acd3a704b858631.js",
+      "sha256": "7acd3a704b85863152ddf85a81521e43380b52e1aa6de202726cc6d14db2988b",
+      "hosts": [
+        "api.mangadex.org",
+        "uploads.mangadex.org",
+        "*.mangadex.network"
+      ],
+      "website": "https://mangadex.org/",
+      "author": "zwu5h · unofficial adapter"
+    }
+  ]
+}

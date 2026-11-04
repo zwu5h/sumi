@@ -28,8 +28,11 @@ enum SourceNetwork {
         var request = URLRequest(url: url)
         request.setValue("Sumi/1.0", forHTTPHeaderField: "User-Agent")
         let (bytes, response) = try await session.bytes(for: request)
-        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-            throw SourceError.invalid("The source returned an unsuccessful response. Please try again later.")
+        guard let response = response as? HTTPURLResponse else {
+            throw SourceError.invalid("The source returned an invalid response.")
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw SourceError.invalid("The source returned HTTP \(response.statusCode). Please try again later.")
         }
         guard response.expectedContentLength <= limit else { throw SourceError.invalid("The source response is too large.") }
         var data = Data()

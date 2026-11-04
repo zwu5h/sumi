@@ -88,7 +88,14 @@ private struct SourceInstallView: View {
                     Link("Source website", destination: selection.manifest.website)
                 }
                 Section("Can connect to") {
-                    ForEach(selection.manifest.hosts, id: \.self) { Text($0).textSelection(.enabled) }
+                    ForEach(selection.manifest.hosts, id: \.self) { host in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(host).textSelection(.enabled)
+                            if host.hasPrefix("*.") {
+                                Text("All subdomains of \(host.dropFirst(2))").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
                 Section {
                     Text("This installs third-party JavaScript that can request data from these hosts. Your IP address and search terms may be visible to them. Install only sources you trust.")
@@ -174,6 +181,7 @@ struct SourceImage: View {
     let sourceID: String
     var fill = false
     var onLoaded: () -> Void = {}
+    var onRetry: (() -> Void)? = nil
     @State private var image: UIImage?
     @State private var error: String?
     @State private var retry = 0
@@ -189,7 +197,9 @@ struct SourceImage: View {
                 VStack(spacing: 12) {
                     Image(systemName: "photo.badge.exclamationmark")
                     if !fill { Text(error ?? "Couldn’t load page").font(.caption).multilineTextAlignment(.center) }
-                    Button("Retry") { retry += 1 }.frame(minHeight: 44)
+                    Button("Retry") {
+                        if let onRetry { onRetry() } else { retry += 1 }
+                    }.frame(minHeight: 44)
                 }.foregroundStyle(.secondary).padding()
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.task(id: key) {

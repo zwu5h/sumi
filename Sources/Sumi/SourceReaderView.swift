@@ -110,6 +110,7 @@ struct SourceReaderView: View {
     @State private var scrubbing = false
     @State private var retry = 0
     @State private var firstLoad = true
+    @State private var loadedChapter: Int?
     @State private var landAtEnd = false
     @State private var hideTask: Task<Void, Never>?
 
@@ -137,10 +138,10 @@ struct SourceReaderView: View {
                     ForEach(indices, id: \.self) { index in
                         Group {
                             if abs(index - page) <= 1 {
-                                SourceImage(url: pages[index], sourceID: reference.sourceID) {
+                                SourceImage(url: pages[index], sourceID: reference.sourceID, onLoaded: {
                                     loaded.insert(index)
                                     if index == page { save() }
-                                }
+                                }, onRetry: { save(); retry += 1 })
                             } else { Color.clear }
                         }.tag(index).contentShape(Rectangle()).onTapGesture { toggleControls() }
                             .accessibilityLabel("Page \(index + 1)")
@@ -207,6 +208,7 @@ struct SourceReaderView: View {
     }
 
     @MainActor private func load() async {
+        let previousPage = loadedChapter == chapter ? page : nil
         loading = true; error = nil; controls = true; loaded = []; hideTask?.cancel()
         let generation = key
         do {
@@ -216,7 +218,8 @@ struct SourceReaderView: View {
             pages = urls
             if firstLoad && resume, let position = library.positions[manga.id], position.chapter == chapter {
                 page = min(max(0, position.page), urls.count - 1)
-            } else { page = landAtEnd ? urls.count - 1 : 0 }
+            } else { page = landAtEnd ? urls.count - 1 : min(previousPage ?? 0, urls.count - 1) }
+            loadedChapter = chapter
             firstLoad = false; landAtEnd = false; loading = false; resetTimer()
         } catch {
             guard !Task.isCancelled, generation == key else { return }

@@ -25,11 +25,9 @@ struct SourceManifest: Codable, Hashable, Identifiable {
             throw SourceError.invalid("This extension has an invalid or unsupported manifest.")
         }
         for host in hosts {
-            guard host == host.lowercased(), host.contains("."), !host.hasSuffix(".local"),
-                  !host.hasSuffix(".localhost"), !host.hasSuffix(".internal"),
-                  host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0.count <= 63 && !$0.hasPrefix("-") && !$0.hasSuffix("-") && $0.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) }),
-                  !host.allSatisfy({ $0.isNumber || $0 == "." }) else {
-                throw SourceError.invalid("Extensions must declare exact public host names.")
+            let domain = host.hasPrefix("*.") ? String(host.dropFirst(2)) : host
+            guard host == host.lowercased(), SourcePolicy.validDomain(domain) else {
+                throw SourceError.invalid("Declare a valid host name or a scoped subdomain permission such as *.example.org.")
             }
         }
         try SourcePolicy.check(script)
@@ -94,13 +92,30 @@ struct SourceChapter: Codable, Hashable, Identifiable {
 }
 
 enum SourcePolicy {
+    static func validDomain(_ host: String) -> Bool {
+        host.contains(".") && host.count <= 253 && !host.hasSuffix(".local") &&
+        !host.hasSuffix(".localhost") && !host.hasSuffix(".internal") &&
+        !host.allSatisfy({ $0.isNumber || $0 == "." }) &&
+        host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
+            !$0.isEmpty && $0.count <= 63 && !$0.hasPrefix("-") && !$0.hasSuffix("-") &&
+            $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+        }
+    }
+
+    static func allows(_ host: String, patterns: [String]) -> Bool {
+        patterns.contains { pattern in
+            if pattern.hasPrefix("*.") {
+                let domain = String(pattern.dropFirst(2))
+                return validDomain(domain) && host.hasSuffix("." + domain)
+            }
+            return pattern == host
+        }
+    }
+
     static func check(_ url: URL, hosts: [String]? = nil) throws {
         guard url.scheme == "https", let host = url.host?.lowercased(),
               url.user == nil, url.password == nil, url.port == nil || url.port == 443,
-              host.contains("."), !host.contains(":"), !host.hasSuffix(".local"),
-              !host.hasSuffix(".localhost"), !host.hasSuffix(".internal"),
-              !host.allSatisfy({ $0.isNumber || $0 == "." }),
-              hosts == nil || hosts!.contains(host) else {
+              validDomain(host), hosts == nil || allows(host, patterns: hosts!) else {
             throw SourceError.invalid("Only HTTPS URLs on the permitted hosts are allowed.")
         }
     }

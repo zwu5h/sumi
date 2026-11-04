@@ -66,14 +66,22 @@ the hosting URL or script; the script's SHA-256 is generated automatically.
 }
 ```
 
-URLs must be absolute HTTPS URLs. `hosts` lists exact lowercase domains; wildcards,
-literal IPs, credentials in URLs, nonstandard ports and common local host suffixes are
-rejected. API requests and images, including redirects, must stay on this list. Index
+URLs must be absolute HTTPS URLs. `hosts` lists exact lowercase domains or explicit
+scoped subdomain permissions such as `*.mangadex.network`. A subdomain permission
+matches descendants only, not the parent domain or similarly named domains, and is
+explained at installation. Bare wildcards, literal IPs, credentials in URLs,
+nonstandard ports and common local host suffixes are rejected. API requests and images,
+including redirects, must stay on this list. Index
 and script downloads can use their own host, and redirects must stay on that download
 host. A checksum detects a mismatched download; it is **not** an author signature or
 proof that a repository is trustworthy.
 
 ## Source API v1
+
+A ready-to-install [MangaDex repository](../extensions/mangadex/README.md) is maintained
+separately from the app bundle, with German and English adapters. Its public index is
+`https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/repository.json`.
+It requires the updated app with scoped subdomain permissions.
 
 Publish a single UTF-8 JavaScript file defining `const source = { ... }`. Bundle your
 dependencies into that file; runtime imports of external scripts are blocked. Each

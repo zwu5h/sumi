@@ -1,0 +1,4 @@
+# Repository checksums cover the published script bytes, including line endings.
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf

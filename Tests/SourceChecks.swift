@@ -20,9 +20,16 @@ enum SourceChecks {
         }
         let valid = try index(raw)
         try valid.validate()
+        try index(raw.replacingOccurrences(of: "api.example.org", with: "*.example.org")).validate()
+        try SourcePolicy.check(URL(string: "https://node.cdn.example.org/page.png")!, hosts: ["*.example.org"])
+        for denied in ["https://example.org/", "https://evil-example.org/", "https://node.example.org.evil.org/",
+                       "https://user:secret@node.example.org/", "https://node.example.org:444/", "https://*.example.org/"] {
+            rejects { try SourcePolicy.check(URL(string: denied)!, hosts: ["*.example.org"]) }
+        }
         for changed in [raw.replacingOccurrences(of: "\"apiVersion\":1", with: "\"apiVersion\":2"),
                         raw.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":2"),
-                        raw.replacingOccurrences(of: "api.example.org", with: "*.example.org"),
+                        raw.replacingOccurrences(of: "api.example.org", with: "*.org"),
+                        raw.replacingOccurrences(of: "api.example.org", with: "api.*.example.org"),
                         raw.replacingOccurrences(of: "api.example.org", with: "api..example.org"),
                         raw.replacingOccurrences(of: "api.example.org", with: "127.0.0.1"),
                         raw.replacingOccurrences(of: String(repeating: "a", count: 64), with: "wrong")] {
@@ -56,6 +63,6 @@ enum SourceChecks {
         store.rememberRemote(manga)
         precondition(store.positions[manga.id] == nil, "Removed chapter must not resume at an unrelated chapter")
         store.markUnread(manga)
-        print("PASS: repository validation, exact HTTPS host permissions, legacy PDF decoding, remote library persistence and stable chapter IDs")
+        print("PASS: repository validation, exact/scoped HTTPS permissions and suffix boundaries, legacy PDF decoding, remote library persistence and stable chapter IDs")
     }
 }
