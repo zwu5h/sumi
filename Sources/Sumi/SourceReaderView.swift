@@ -99,6 +99,7 @@ struct SourceReaderView: View {
     @State private var chapter: Int
     @State private var page = 0
     @State private var pages: [URL] = []
+    @StateObject private var pageCache = SourcePageCache()
     @State private var loaded: Set<Int> = []
     @State private var loading = true
     @State private var error: String?
@@ -134,7 +135,7 @@ struct SourceReaderView: View {
                 }.padding()
             } else if verticalReading {
                 VerticalReaderPages(count: pages.count, page: $page, onEnd: next) { index, width in
-                    SourceImage(url: pages[index], sourceID: reference.sourceID, fitWidth: true, onLoaded: {
+                    SourceImage(url: pages[index], sourceID: reference.sourceID, fitWidth: true, pageCache: pageCache, onLoaded: {
                         loaded.insert(index)
                         if index == page { save() }
                     }, onRetry: { save(); retry += 1 })
@@ -150,7 +151,7 @@ struct SourceReaderView: View {
                             if index == pages.count {
                                 Button("Next chapter", action: next).frame(maxWidth: .infinity, maxHeight: .infinity)
                             } else if abs(index - page) <= 1 {
-                                SourceImage(url: pages[index], sourceID: reference.sourceID, onLoaded: {
+                                SourceImage(url: pages[index], sourceID: reference.sourceID, pageCache: pageCache, onLoaded: {
                                     loaded.insert(index)
                                     if index == page { save() }
                                 }, onRetry: { save(); retry += 1 })
@@ -194,7 +195,7 @@ struct SourceReaderView: View {
             .task(id: key) { await load() }
             .onChange(of: page) { _, value in
                 if !loading && value == pages.count { page = max(0, pages.count - 1); next() }
-                else { save(); resetTimer() }
+                else { prefetchPages(); save(); resetTimer() }
             }
             .onChange(of: choosingChapter) { _, _ in resetTimer() }
             .onChange(of: finished) { _, _ in resetTimer() }
@@ -206,7 +207,7 @@ struct SourceReaderView: View {
             }
             .onChange(of: keepAwake) { _, value in UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && value }
             .onAppear { UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && keepAwake }
-            .onDisappear { hideTask?.cancel(); save(); UIApplication.shared.isIdleTimerDisabled = false }
+            .onDisappear { hideTask?.cancel(); pageCache.reset(); save(); UIApplication.shared.isIdleTimerDisabled = false }
             .sheet(isPresented: $choosingChapter) {
                 NavigationStack {
                     List(Array(chapters.enumerated()), id: \.element.id) { index, item in
@@ -231,6 +232,7 @@ struct SourceReaderView: View {
 
     @MainActor private func load() async {
         let previousPage = loadedChapter == chapter ? page : nil
+        pageCache.reset()
         loading = true; error = nil; controls = true; loaded = []; hideTask?.cancel()
         let generation = key
         do {
@@ -242,11 +244,15 @@ struct SourceReaderView: View {
                 page = min(max(0, position.page), urls.count - 1)
             } else { page = landAtEnd ? urls.count - 1 : min(previousPage ?? 0, urls.count - 1) }
             loadedChapter = chapter
-            firstLoad = false; landAtEnd = false; resumeChapter = false; loading = false; resetTimer()
+            firstLoad = false; landAtEnd = false; resumeChapter = false; loading = false; prefetchPages(); resetTimer()
         } catch {
             guard !Task.isCancelled, generation == key else { return }
             self.error = error.localizedDescription; loading = false
         }
+    }
+    private func prefetchPages() {
+        guard !loading, let source = try? sources.source(reference.sourceID) else { return }
+        pageCache.prefetch(pages, around: page, source: source)
     }
     private func save() {
         guard !loading, error == nil, loaded.contains(page), !pages.isEmpty else { return }

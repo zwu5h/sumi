@@ -478,6 +478,7 @@ struct SourceImage: View {
     let sourceID: String
     var fill = false
     var fitWidth = false
+    var pageCache: SourcePageCache? = nil
     var onLoaded: () -> Void = {}
     var onRetry: (() -> Void)? = nil
     @State private var image: UIImage?
@@ -486,9 +487,11 @@ struct SourceImage: View {
     private var source: InstalledSource? { sources.installed.first { $0.id == sourceID } }
     private var key: String { "\(source.map { String($0.manifest.hashValue) } ?? "removed"):\(url?.absoluteString ?? ""):\(retry)" }
 
+    private var displayedImage: UIImage? { image ?? url.flatMap { pageCache?.cachedImage($0) } }
+
     var body: some View {
         Group {
-            if let image {
+            if let image = displayedImage {
                 if fill { Image(uiImage: image).resizable().scaledToFill() }
                 else if fitWidth { Image(uiImage: image).resizable().scaledToFit() }
                 else { ZoomableSourcePage(image: image) }
@@ -508,24 +511,10 @@ struct SourceImage: View {
             do {
                 guard let url else { throw SourceError.invalid("No cover available.") }
                 let source = try sources.source(sourceID)
-                let data = try await SourceNetwork.get(url, hosts: source.manifest.hosts, limit: 20_000_000,
-                                                       imageReferer: source.manifest.imageReferer)
+                let decoded: UIImage
+                if let pageCache { decoded = try await pageCache.image(url, source: source) }
+                else { decoded = try await SourceImageDecoder.load(url, source: source, cover: fill) }
                 try Task.checkCancellation()
-                let decoded = await Task.detached(priority: .userInitiated) {
-                    guard let input = CGImageSourceCreateWithData(data as CFData, nil),
-                          let properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any],
-                          let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
-                          let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
-                          let maximum = SourceImageSizing.maximumPixelSize(width: width.doubleValue, height: height.doubleValue, cover: fill),
-                          let thumbnail = CGImageSourceCreateThumbnailAtIndex(input, 0, [
-                            kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: maximum
-                          ] as CFDictionary) else { return UIImage?.none }
-                    return UIImage(cgImage: thumbnail)
-                }.value
-                try Task.checkCancellation()
-                guard let decoded else { throw SourceError.invalid("The source returned an unreadable image.") }
                 image = decoded; onLoaded()
             } catch {
                 guard !Task.isCancelled else { return }
