@@ -2,6 +2,7 @@ import Foundation
 
 enum SourceChecks {
     @MainActor static func run() throws {
+        try SourceNetworkChecks.run()
         func rejects(_ operation: () throws -> Void) {
             do { try operation(); preconditionFailure("Expected rejection") } catch { }
         }
@@ -20,6 +21,18 @@ enum SourceChecks {
         }
         let valid = try index(raw)
         try valid.validate()
+        precondition(valid.extensions[0].imageReferer == nil, "Legacy source manifests must decode")
+        func withReferer(_ value: String) -> String {
+            raw.replacingOccurrences(of: "\"author\":\"Test author\"", with: "\"author\":\"Test author\",\"imageReferer\":\"\(value)\"")
+        }
+        let withImageReference = try index(withReferer("https://example.org/"))
+        try withImageReference.validate()
+        let encodedReference = try JSONDecoder().decode(RepositoryIndex.self, from: JSONEncoder().encode(withImageReference))
+        precondition(encodedReference.extensions[0].imageReferer?.absoluteString == "https://example.org/")
+        for denied in ["https://evil.org/", "http://example.org/", "https://example.org/private", "https://example.org/?token=secret",
+                       "https://user:secret@example.org/", "https://example.org/#fragment", "https://example.org:444/"] {
+            rejects { try index(withReferer(denied)).validate() }
+        }
         try index(raw.replacingOccurrences(of: "api.example.org", with: "*.example.org")).validate()
         try SourcePolicy.check(URL(string: "https://node.cdn.example.org/page.png")!, hosts: ["*.example.org"])
         for denied in ["https://example.org/", "https://evil-example.org/", "https://node.example.org.evil.org/",

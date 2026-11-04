@@ -90,6 +90,16 @@ and script downloads can use their own host, and redirects must stay on that dow
 host. A checksum detects a mismatched download; it is **not** an author signature or
 proof that a repository is trustworthy.
 
+An optional `imageReferer` URL lets a source declare the public website reference
+required by its image server, for example `"imageReferer": "https://toontop.io/"`.
+It must use HTTPS and the same host as `website`, with no credentials, nonstandard
+port, path beyond `/`, query or fragment. Installation shows this reference.
+Sumi sends it as the `Referer` header for covers and chapter images only, preserving
+it across redirects to permitted hosts. Script/index downloads and extension API
+requests do not receive it. Existing manifests without it retain their previous
+behavior. ToonTop requires a new app build containing this support; earlier builds
+ignore the field and its images fail with HTTP 403.
+
 ## Source API v1
 
 A ready-to-install [MangaDex repository](https://github.com/zwu5h/sumi-extensions) is maintained

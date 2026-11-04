@@ -86,6 +86,9 @@ private struct SourceInstallView: View {
                     LabeledContent("Author", value: selection.manifest.author)
                     Text(selection.repository.url.absoluteString).font(Design.font(.caption)).foregroundStyle(.secondary)
                     Link("Source website", destination: selection.manifest.website)
+                    if let imageReferer = selection.manifest.imageReferer {
+                        LabeledContent("Image website reference", value: imageReferer.absoluteString)
+                    }
                 }
                 Section("Can connect to") {
                     ForEach(selection.manifest.hosts, id: \.self) { host in
@@ -421,7 +424,8 @@ struct SourceImage: View {
             do {
                 guard let url else { throw SourceError.invalid("No cover available.") }
                 let source = try sources.source(sourceID)
-                let data = try await SourceNetwork.get(url, hosts: source.manifest.hosts, limit: 20_000_000)
+                let data = try await SourceNetwork.get(url, hosts: source.manifest.hosts, limit: 20_000_000,
+                                                       imageReferer: source.manifest.imageReferer)
                 try Task.checkCancellation()
                 let decoded = await Task.detached(priority: .userInitiated) {
                     guard let input = CGImageSourceCreateWithData(data as CFData, nil),

@@ -19,11 +19,19 @@ with tempfile.TemporaryDirectory(prefix="sumi-import-") as directory:
     )
     adapted = directory / "LibraryStore.swift"
     adapted.write_text(source, encoding="utf-8")
+    # Linux Foundation lacks URLSession.bytes. Keep the production request builder
+    # and redirect delegate verbatim; the iOS build checks the streaming download.
+    network = (root / "Sources/Sumi/SourceNetwork.swift").read_text(encoding="utf-8")
+    network = network.split("    static func get(", 1)[0] + "}\n"
+    network = network.replace("import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n", 1)
+    adapted_network = directory / "SourceNetwork.swift"
+    adapted_network.write_text(network, encoding="utf-8")
     executable = directory / "library-import-checks"
     subprocess.run([
         "swiftc", "-swift-version", "5", str(adapted),
         str(root / "Sources/Sumi/ReadingPosition.swift"),
         str(root / "Sources/Sumi/SourceModels.swift"),
+        str(adapted_network), str(root / "Tests/SourceNetworkChecks.swift"),
         str(root / "Tests/SourceChecks.swift"),
         str(root / "Tests/LibraryImportChecks.swift"), "-o", str(executable),
     ], check=True)

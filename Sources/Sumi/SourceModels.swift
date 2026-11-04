@@ -15,6 +15,7 @@ struct SourceManifest: Codable, Hashable, Identifiable {
     let hosts: [String]
     let website: URL
     let author: String
+    let imageReferer: URL?
 
     func validate() throws {
         guard apiVersion == 1, !id.isEmpty, id.count <= 100,
@@ -32,6 +33,14 @@ struct SourceManifest: Codable, Hashable, Identifiable {
         }
         try SourcePolicy.check(script)
         try SourcePolicy.check(website)
+        if let imageReferer {
+            try SourcePolicy.check(imageReferer)
+            guard imageReferer.host?.lowercased() == website.host?.lowercased(),
+                  imageReferer.path.isEmpty || imageReferer.path == "/",
+                  imageReferer.query == nil, imageReferer.fragment == nil else {
+                throw SourceError.invalid("An image referer must be the source website’s HTTPS origin, without a path or query.")
+            }
+        }
     }
 }
 
