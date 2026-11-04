@@ -108,6 +108,7 @@ struct OfflineView: View {
 }
 
 struct SettingsView: View {
+    @EnvironmentObject private var profiles: ProfileStore
     @AppStorage("appearance") private var appearance = "light"
     @AppStorage("verticalReading") private var verticalReading = false
     @AppStorage("rightToLeft") private var rightToLeft = true
@@ -117,6 +118,15 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    QuietPanel {
+                        NavigationLink { ProfilesView() } label: {
+                            HStack {
+                                Label("Profiles", systemImage: "person.crop.circle")
+                                Spacer()
+                                Text(profiles.activeProfile.name).foregroundStyle(.secondary)
+                            }.frame(minHeight: 44)
+                        }
+                    }
                     QuietPanel {
                         NavigationLink { SourcesView() } label: {
                             Label("Sources & repositories", systemImage: "network").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -144,10 +154,25 @@ struct SettingsView: View {
                         Text("PDFs work offline; sources require internet.")
                             .font(Design.font(.footnote)).foregroundStyle(.secondary).lineSpacing(3)
                         Text("Version 1.0").font(Design.font(.caption)).foregroundStyle(.secondary)
+                        NavigationLink("Privacy policy") { PrivacyPolicyView() }
                     }.padding(.vertical, 8)
                 }.padding(Design.spacing).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.pageBackground().navigationTitle("Settings")
         }
+    }
+}
+
+private struct PrivacyPolicyView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Sumi privacy policy").font(.title)
+                Text("Sumi stores profiles, settings, your library, reading progress, imported PDFs and installed source code on this device. Sumi has no account service, analytics or advertising service. Device backups may include this data according to your system settings.")
+                Text("Online sources are third-party services. When you browse or read, their servers receive your IP address, search terms and requested title, chapter and image identifiers. Their privacy policies apply. The source installation screen identifies permitted hosts and the source website. Install only sources you trust.")
+                Text("Extensions are not given your local PDFs, library or device credentials. Installed sources are shared between profiles. Profiles separate collections and preferences; they do not lock access to this device or provide parental controls.")
+                Text("You can delete imported PDFs in Downloads, remove titles from your library and remove sources in Settings. Removing a source keeps saved titles and reading progress. Uninstalling Sumi removes its local app data; copies you exported and system backups are managed separately.")
+            }.padding()
+        }.navigationTitle("Privacy policy")
     }
 }
 

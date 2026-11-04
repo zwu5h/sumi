@@ -5,10 +5,10 @@
     {
       "id": "org.zwu5h.mangadex.de",
       "name": "MangaDex · Deutsch",
-      "version": "1.0.0",
+      "version": "1.4.0",
       "apiVersion": 1,
-      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-de-6c7489e3246d2211.js",
-      "sha256": "6c7489e3246d2211d46ec6f129fc3a4e05bbc315f00f6c34a580892eaf90787b",
+      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-de-16b9be4eea8cf9fb.js",
+      "sha256": "16b9be4eea8cf9fb920685d07485738194d8f561769b16e99e7bdf14c5ccf93a",
       "hosts": [
         "api.mangadex.org",
         "uploads.mangadex.org",
@@ -20,10 +20,10 @@
     {
       "id": "org.zwu5h.mangadex.en",
       "name": "MangaDex · English",
-      "version": "1.0.0",
+      "version": "1.4.0",
       "apiVersion": 1,
-      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-en-7acd3a704b858631.js",
-      "sha256": "7acd3a704b85863152ddf85a81521e43380b52e1aa6de202726cc6d14db2988b",
+      "script": "https://raw.githubusercontent.com/zwu5h/sumi/main/extensions/mangadex/dist/mangadex-en-e02d3ac4d305cb68.js",
+      "sha256": "e02d3ac4d305cb68422ed765a9589a1bc255f9a110c592002859c1b0485fe969",
       "hosts": [
         "api.mangadex.org",
         "uploads.mangadex.org",

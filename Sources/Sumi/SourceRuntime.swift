@@ -45,30 +45,33 @@ final class SourceRuntime: NSObject, WKScriptMessageHandlerWithReply, WKNavigati
                         }
                         guard !closed else { throw CancellationError() }
                         let body = """
+                        const stringify = JSON.stringify.bind(JSON);
                         const api = Object.freeze({request: async (url) => {
                             const text = await window.webkit.messageHandlers.request.postMessage({url});
                             return {text, json: () => JSON.parse(text)};
                         }});
-                        \(source.code)
+                        const source = new Function('"use strict";\\n' + code + '\\n;return source;')();
                         if (operation === '__validate') {
-                            return JSON.stringify(typeof source === 'object' && source !== null &&
-                                ['search', 'chapters', 'pages'].every(name => typeof source[name] === 'function'));
+                            return stringify(typeof source === 'object' && source !== null &&
+                                typeof source.search === 'function' && typeof source.chapters === 'function' && typeof source.pages === 'function');
                         }
                         if (operation === '__filters') {
-                            return JSON.stringify(typeof source.filters === 'function'
+                            const value = stringify(typeof source.filters === 'function'
                                 ? await source.filters(input, api) : {tags: [], statuses: [], sortOrders: []});
+                            if (typeof value !== 'string' || value.length > 4000000) throw new Error('Invalid extension result');
+                            return value;
                         }
                         if (typeof source !== 'object' || typeof source[operation] !== 'function') {
                             throw new Error('Extension does not implement ' + operation);
                         }
-                        const value = JSON.stringify(await source[operation](input, api));
+                        const value = stringify(await source[operation](input, api));
                         if (typeof value !== 'string' || value.length > 4000000) throw new Error('Invalid extension result');
                         return value;
                         """
-                        webView.callAsyncJavaScript(body, arguments: ["operation": operation, "input": input], in: nil, in: .page) { [weak self] result in
+                        webView.callAsyncJavaScript(body, arguments: ["operation": operation, "input": input, "code": source.code], in: nil, in: .page) { [weak self] result in
                             switch result {
                             case .success(let value):
-                                guard let string = value as? String else {
+                                guard let string = value as? String, string.utf8.count <= 4_000_000 else {
                                     self?.finish(.failure(SourceError.invalid("The extension returned invalid data."))); return
                                 }
                                 self?.finish(.success(string))
@@ -122,7 +125,7 @@ final class SourceRuntime: NSObject, WKScriptMessageHandlerWithReply, WKNavigati
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
                                replyHandler: @escaping (Any?, String?) -> Void) {
         guard !closed, requestCount < 30, requests.count < 4,
-              let body = message.body as? [String: Any], let value = body["url"] as? String,
+              let body = message.body as? [String: Any], let value = body["url"] as? String, value.utf8.count <= 16_384,
               let url = URL(string: value), (try? SourcePolicy.check(url, hosts: hosts)) != nil else {
             replyHandler(nil, "Request denied: check extension hosts or request limits."); return
         }

@@ -65,18 +65,90 @@ function chapterTitle(attributes) {
   return parts.join(' · ') || (language === 'de' ? 'Einzelkapitel' : 'One-shot');
 }
 
+function contentRatings(allowNSFW) {
+  return allowNSFW === 'true' ? ['safe', 'suggestive', 'erotica', 'pornographic'] : ['safe'];
+}
+
 const source = {
-  async search({ query }, api) {
+  async filters(_, api) {
+    const response = await getJSON(api, '/manga/tag');
+    if (!Array.isArray(response.data)) throw new Error('MangaDex returned an invalid tag list.');
+    return {
+      supportsNSFW: true, supportsExcludedTags: true,
+      groups: [
+        {id: 'demographic', name: 'Demographic', multiple: true, options: ['shounen', 'shoujo', 'seinen', 'josei', 'none'].map(id => ({id, name: id}))},
+        {id: 'originalLanguage', name: 'Original language', multiple: true, options: ['ja', 'ko', 'zh', 'zh-hk', 'en', 'de', 'fr', 'es', 'ru', 'vi', 'th', 'id', 'it', 'pt-br'].map(id => ({id, name: id}))},
+        {id: 'contentRating', name: 'Content rating', multiple: true, options: ['safe', 'suggestive', 'erotica', 'pornographic'].map(id => ({id, name: id}))},
+        {id: 'year', name: 'Publication year', options: []},
+        {id: 'author', name: 'Author name', options: []},
+        {id: 'artist', name: 'Artist name', options: []},
+        {id: 'excludedTagsMode', name: 'Match excluded tags', options: ['AND', 'OR'].map(id => ({id, name: id}))},
+        {id: 'hasAvailableChapters', name: 'Available chapters', options: [{id: 'true', name: 'With chapters'}, {id: 'false', name: 'Without chapters'}]}
+      ],
+      tags: response.data.map(tag => ({id: uuid(tag.id), name: localized(tag.attributes?.name)})),
+      statuses: ['ongoing', 'completed', 'hiatus', 'cancelled'].map(id => ({id, name: id[0].toUpperCase() + id.slice(1)})),
+      sortOrders: [
+        {id: 'popular', name: 'Most popular'}, {id: 'latest', name: 'Recently updated'},
+        {id: 'newest', name: 'Recently added'}, {id: 'title', name: 'Title A–Z'},
+        ...['title', 'year', 'createdAt', 'updatedAt', 'latestUploadedChapter', 'followedCount', 'relevance', 'rating'].flatMap(field =>
+          ['asc', 'desc'].map(direction => ({id: field + ':' + direction, name: field + ' · ' + direction})))
+      ]
+    };
+  },
+
+  async search({ query, allowNSFW = 'false', tags = '[]', tagMode = 'AND', status = '', sort = '', excludedTags = '[]', filters = '{}', page }, api) {
     const term = String(query || '').trim();
+    const number = page === undefined ? 1 : Number(page);
+    if (!Number.isSafeInteger(number) || number < 1 || number > 200) throw new Error('Invalid MangaDex catalog page.');
+    const offset = (number - 1) * 50;
+    const selectedTags = JSON.parse(tags);
+    const excluded = JSON.parse(excludedTags);
+    const extra = JSON.parse(filters);
+    if (!Array.isArray(excluded) || excluded.length > 500 || !extra || typeof extra !== 'object' || Array.isArray(extra)) throw new Error('Invalid filters.');
+    const known = ['demographic', 'originalLanguage', 'contentRating', 'year', 'hasAvailableChapters', 'excludedTagsMode', 'author', 'artist'];
+    for (const [key, values] of Object.entries(extra)) {
+      if (!known.includes(key) || !Array.isArray(values) || values.some(v => typeof v !== 'string')) throw new Error('Invalid filter group.');
+    }
+    if (!Array.isArray(selectedTags) || selectedTags.length > 500) throw new Error('Invalid tags.');
+    if (!['AND', 'OR'].includes(tagMode)) throw new Error('Invalid tag matching mode.');
+    if (status && !['ongoing', 'completed', 'hiatus', 'cancelled'].includes(status)) throw new Error('Invalid status.');
+    const orders = {popular: ['followedCount', 'desc'], latest: ['latestUploadedChapter', 'desc'],
+      newest: ['createdAt', 'desc'], title: ['title', 'asc']};
+    for (const field of ['title', 'year', 'createdAt', 'updatedAt', 'latestUploadedChapter', 'followedCount', 'relevance', 'rating']) {
+      for (const direction of ['asc', 'desc']) orders[field + ':' + direction] = [field, direction];
+    }
+    if (sort && !Object.hasOwn(orders, sort)) throw new Error('Invalid sort order.');
+    const order = sort ? orders[sort] : [term ? 'relevance' : 'followedCount', 'desc'];
     const parameters = [
-      ['limit', 50], ['contentRating[]', 'safe'], ['availableTranslatedLanguage[]', language],
+      ['limit', 50], ['offset', offset], ...contentRatings(allowNSFW).filter(rating => !extra.contentRating?.length || extra.contentRating.includes(rating)).map(rating => ['contentRating[]', rating]), ['availableTranslatedLanguage[]', language],
       ['includes[]', 'author'], ['includes[]', 'artist'], ['includes[]', 'cover_art'],
-      [term ? 'order[relevance]' : 'order[followedCount]', 'desc']
+      ['order[' + order[0] + ']', order[1]]
     ];
     if (term) parameters.push(['title', term]);
+    for (const tag of new Set(selectedTags)) parameters.push(['includedTags[]', uuid(tag)]);
+    if (selectedTags.length) parameters.push(['includedTagsMode', tagMode]);
+    if (status) parameters.push(['status[]', status]);
+    for (const tag of new Set(excluded)) parameters.push(['excludedTags[]', uuid(tag)]);
+    if (excluded.length) parameters.push(['excludedTagsMode', extra.excludedTagsMode?.[0] || 'OR']);
+    for (const [key, parameter] of [['demographic', 'publicationDemographic[]'], ['originalLanguage', 'originalLanguage[]']]) {
+      for (const value of extra[key] || []) parameters.push([parameter, value]);
+    }
+    for (const key of ['year', 'hasAvailableChapters']) if (extra[key]?.length) parameters.push([key, extra[key][0]]);
+    if (extra.contentRating?.length && !extra.contentRating.some(rating => contentRatings(allowNSFW).includes(rating))) {
+      throw new Error('Enable NSFW content to use the selected content rating.');
+    }
+    for (const [key, parameter] of [['author', 'authors[]'], ['artist', 'artists[]']]) {
+      const name = extra[key]?.[0]?.trim();
+      if (!name) continue;
+      const matches = await getJSON(api, '/author', [['name', name], ['limit', 100]]);
+      if (!Array.isArray(matches.data)) throw new Error('MangaDex returned invalid creator results.');
+      if (!matches.data.length) return page === undefined ? [] : {titles: [], nextPage: null};
+      for (const creator of matches.data) parameters.push([parameter, uuid(creator.id)]);
+    }
     const response = await getJSON(api, '/manga', parameters);
     if (!Array.isArray(response.data)) throw new Error('MangaDex returned an invalid title list.');
-    return response.data.filter(item => item.type === 'manga' && item.attributes?.contentRating === 'safe')
+    const allowedRatings = contentRatings(allowNSFW).filter(rating => !extra.contentRating?.length || extra.contentRating.includes(rating));
+    const titles = response.data.filter(item => item.type === 'manga' && allowedRatings.includes(item.attributes?.contentRating))
       .map(item => {
         uuid(item.id);
         const attributes = item.attributes;
@@ -94,13 +166,19 @@ const source = {
           cover: cover ? mdImages + '/covers/' + item.id + '/' + encodeURIComponent(cover.attributes.fileName) + '.256.jpg' : null
         };
       });
+    if (page === undefined) return titles;
+    if (!Number.isInteger(response.total) || response.total < 0 || response.offset !== offset || response.data.length > 50) {
+      throw new Error('MangaDex returned invalid catalog pagination.');
+    }
+    const hasNext = response.data.length > 0 && offset + response.data.length < Math.min(response.total, 10000);
+    return {titles, nextPage: hasNext ? String(number + 1) : null};
   },
 
-  async chapters({ mangaID }, api) {
+  async chapters({ mangaID, allowNSFW = 'false' }, api) {
     uuid(mangaID);
     const manga = await getJSON(api, '/manga/' + mangaID);
-    if (manga.data?.attributes?.contentRating !== 'safe') {
-      throw new Error('This source only includes titles rated Safe by MangaDex.');
+    if (!contentRatings(allowNSFW).includes(manga.data?.attributes?.contentRating)) {
+      throw new Error('This title is hidden by the source content setting. Enable NSFW content in this source to read it.');
     }
     const results = new Map();
     let offset = 0;
@@ -108,7 +186,7 @@ const source = {
     while (offset < total) {
       const parameters = [
         ['limit', 500], ['offset', offset], ['translatedLanguage[]', language],
-        ['contentRating[]', 'safe'], ['includes[]', 'scanlation_group'], ['includes[]', 'user'],
+        ...contentRatings(allowNSFW).map(rating => ['contentRating[]', rating]), ['includes[]', 'scanlation_group'], ['includes[]', 'user'],
         ['order[volume]', 'asc'], ['order[chapter]', 'asc'], ['order[createdAt]', 'asc'],
         ['includeEmptyPages', '0'], ['includeExternalUrl', '0'], ['includeFuturePublishAt', '0'],
         ['includeFutureUpdates', '0'], ['includeUnavailable', '0']
@@ -138,13 +216,13 @@ const source = {
     return [...results.values()];
   },
 
-  async pages({ mangaID, chapterID }, api) {
+  async pages({ mangaID, chapterID, allowNSFW = 'false' }, api) {
     uuid(mangaID); uuid(chapterID);
     const chapter = await getJSON(api, '/chapter/' + chapterID, [
       ['includes[]', 'manga'], ['includes[]', 'scanlation_group']
     ]);
     const manga = relationships(chapter.data || {}, 'manga').find(item => item.id === mangaID);
-    if (chapter.data?.id !== chapterID || !manga || manga.attributes?.contentRating !== 'safe' || !readable(chapter.data)) {
+    if (chapter.data?.id !== chapterID || !manga || !contentRatings(allowNSFW).includes(manga.attributes?.contentRating) || !readable(chapter.data)) {
       throw new Error('This chapter is no longer available through this source. Open the title again.');
     }
     const response = await getJSON(api, '/at-home/server/' + chapterID, [['forcePort443', 'true']]);
@@ -154,9 +232,9 @@ const source = {
         !(base.hostname === 'uploads.mangadex.org' || base.hostname.endsWith('.mangadex.network'))) {
       throw new Error('MangaDex selected an image host outside this source’s permissions.');
     }
-    const dataSaver = response.chapter?.dataSaver;
-    const saver = Array.isArray(dataSaver) && dataSaver.length > 0;
-    const files = saver ? dataSaver : response.chapter?.data;
+    const original = response.chapter?.data;
+    const saver = !Array.isArray(original) || original.length === 0;
+    const files = saver ? response.chapter?.dataSaver : original;
     const hash = response.chapter?.hash;
     if (typeof hash !== 'string' || !/^[a-f0-9]{32,64}$/i.test(hash) || !Array.isArray(files) ||
         !files.length || files.length > 500 || files.some(file => typeof file !== 'string' || !file || /[/\\]/.test(file) || file === '.' || file === '..')) {

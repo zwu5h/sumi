@@ -2,9 +2,8 @@ import SwiftUI
 
 @main
 struct SumiApp: App {
-    @StateObject private var library = LibraryStore()
+    @StateObject private var profiles = ProfileStore()
     @StateObject private var sources = SourceStore()
-    @AppStorage("appearance") private var appearance = "light"
 
     init() {
         let navigation = UINavigationBar.appearance()
@@ -16,13 +15,29 @@ struct SumiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ProfileRootView(defaults: profiles.activeDefaults)
+                .id(profiles.activeID)
+                .defaultAppStorage(profiles.activeDefaults)
+                .environmentObject(profiles)
                 .font(Design.font(.body))
-                .environmentObject(library)
                 .environmentObject(sources)
                 .tint(Design.accent)
-                .preferredColorScheme(appearance == "system" ? nil : appearance == "light" ? .light : .dark)
         }
+    }
+}
+
+private struct ProfileRootView: View {
+    @StateObject private var library: LibraryStore
+    @AppStorage("appearance") private var appearance = "light"
+
+    init(defaults: UserDefaults) {
+        _library = StateObject(wrappedValue: LibraryStore(defaults: defaults))
+    }
+
+    var body: some View {
+        RootView()
+            .environmentObject(library)
+            .preferredColorScheme(appearance == "system" ? nil : appearance == "light" ? .light : .dark)
     }
 }
 

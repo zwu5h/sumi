@@ -51,6 +51,7 @@ struct SourceMangaDetailView: View {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(chapter.title).foregroundStyle(.primary)
                                         if !chapter.credit.isEmpty { Text(chapter.credit).font(Design.font(.caption)).foregroundStyle(.secondary) }
+                                        ChapterProgressView(position: library.chapterPosition(resolved, chapter: index + 1))
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right").font(Design.font(.caption))
@@ -109,6 +110,7 @@ struct SourceReaderView: View {
     @State private var firstLoad = true
     @State private var loadedChapter: Int?
     @State private var landAtEnd = false
+    @State private var resumeChapter = false
     @State private var hideTask: Task<Void, Never>?
 
     init(manga: Manga, chapters: [SourceChapter], initialChapter: Int, resume: Bool) {
@@ -131,7 +133,7 @@ struct SourceReaderView: View {
                     Button("Try again") { retry += 1 }.buttonStyle(.bordered)
                 }.padding()
             } else if verticalReading {
-                VerticalReaderPages(count: pages.count, page: $page) { index, width in
+                VerticalReaderPages(count: pages.count, page: $page, onEnd: next) { index, width in
                     SourceImage(url: pages[index], sourceID: reference.sourceID, fitWidth: true, onLoaded: {
                         loaded.insert(index)
                         if index == page { save() }
@@ -143,9 +145,11 @@ struct SourceReaderView: View {
                 }.id(chapter).ignoresSafeArea()
             } else {
                 TabView(selection: $page) {
-                    ForEach(indices, id: \.self) { index in
+                    ForEach(rightToLeft ? [pages.count] + indices : indices + [pages.count], id: \.self) { index in
                         Group {
-                            if abs(index - page) <= 1 {
+                            if index == pages.count {
+                                Button("Next chapter", action: next).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else if abs(index - page) <= 1 {
                                 SourceImage(url: pages[index], sourceID: reference.sourceID, onLoaded: {
                                     loaded.insert(index)
                                     if index == page { save() }
@@ -188,7 +192,10 @@ struct SourceReaderView: View {
                 }
             }
             .task(id: key) { await load() }
-            .onChange(of: page) { _, _ in save(); resetTimer() }
+            .onChange(of: page) { _, value in
+                if !loading && value == pages.count { page = max(0, pages.count - 1); next() }
+                else { save(); resetTimer() }
+            }
             .onChange(of: choosingChapter) { _, _ in resetTimer() }
             .onChange(of: finished) { _, _ in resetTimer() }
             .onChange(of: voiceOver) { _, enabled in if enabled { controls = true }; resetTimer() }
@@ -203,8 +210,14 @@ struct SourceReaderView: View {
             .sheet(isPresented: $choosingChapter) {
                 NavigationStack {
                     List(Array(chapters.enumerated()), id: \.element.id) { index, item in
-                        Button { changeChapter(index + 1); choosingChapter = false } label: {
-                            HStack { Text(item.title); Spacer(); if chapter == index + 1 { Image(systemName: "checkmark") } }
+                        Button { changeChapter(index + 1, resumeSaved: true); choosingChapter = false } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(item.title)
+                                    ChapterProgressView(position: library.chapterPosition(manga, chapter: index + 1))
+                                }
+                                Spacer(); if chapter == index + 1 { Image(systemName: "checkmark") }
+                            }
                         }
                     }.navigationTitle("Chapters")
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { choosingChapter = false } } }
@@ -225,11 +238,11 @@ struct SourceReaderView: View {
             try Task.checkCancellation()
             guard generation == key else { return }
             pages = urls
-            if firstLoad && resume, let position = library.positions[manga.id], position.chapter == chapter {
+            if (firstLoad && resume) || resumeChapter, let position = library.chapterPosition(manga, chapter: chapter) {
                 page = min(max(0, position.page), urls.count - 1)
             } else { page = landAtEnd ? urls.count - 1 : min(previousPage ?? 0, urls.count - 1) }
             loadedChapter = chapter
-            firstLoad = false; landAtEnd = false; loading = false; resetTimer()
+            firstLoad = false; landAtEnd = false; resumeChapter = false; loading = false; resetTimer()
         } catch {
             guard !Task.isCancelled, generation == key else { return }
             self.error = error.localizedDescription; loading = false
@@ -239,9 +252,9 @@ struct SourceReaderView: View {
         guard !loading, error == nil, loaded.contains(page), !pages.isEmpty else { return }
         library.record(manga, chapter: chapter, page: page, count: pages.count)
     }
-    private func changeChapter(_ number: Int, end: Bool = false) {
+    private func changeChapter(_ number: Int, end: Bool = false, resumeSaved: Bool = false) {
         guard number != chapter else { controls = true; resetTimer(); return }
-        save(); loading = true; loaded = []; landAtEnd = end; chapter = number; controls = true
+        save(); loading = true; loaded = []; landAtEnd = end; resumeChapter = resumeSaved; chapter = number; controls = true
         resetTimer()
     }
     private func previous() {

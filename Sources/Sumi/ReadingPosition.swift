@@ -6,6 +6,11 @@ struct ReadingPosition: Codable {
     var pageCount: Int = 4
     var updatedAt = Date()
 
+    var chapterProgress: Double {
+        let value = normalized(chapterCount: max(1, chapter))
+        return (Double(value.page) + 1) / Double(value.pageCount)
+    }
+
     func isComplete(chapterCount: Int) -> Bool {
         let position = normalized(chapterCount: chapterCount)
         return position.chapter == max(1, chapterCount) && position.page == position.pageCount - 1

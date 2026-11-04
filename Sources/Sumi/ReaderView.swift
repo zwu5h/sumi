@@ -38,14 +38,16 @@ struct ReaderView: View {
                 ContentUnavailableView("Couldn’t open this document", systemImage: "doc.questionmark", description: Text("Return to your library and import an unlocked PDF again."))
                     .foregroundStyle(.white)
             } else if verticalReading, let document {
-                ContinuousPDFView(document: document, page: $page, onTap: toggleControls)
+                ContinuousPDFView(document: document, page: $page, onTap: toggleControls, onEnd: nextPage)
                     .id(chapter).ignoresSafeArea()
                     .accessibilityAction(named: "Show reading controls") { revealControls() }
             } else {
                 TabView(selection: $page) {
-                    ForEach(pages, id: \.self) { index in
+                    ForEach(rightToLeft ? [pageCount] + pages : pages + [pageCount], id: \.self) { index in
                         Group {
-                            if let document, let pdfPage = document.page(at: index) {
+                            if index == pageCount {
+                                Button("Next chapter", action: nextPage)
+                            } else if let document, let pdfPage = document.page(at: index) {
                                 PDFPageView(page: pdfPage, onTap: toggleControls)
                             } else {
                                 ContentUnavailableView("Page unavailable", systemImage: "doc.questionmark")
@@ -112,7 +114,7 @@ struct ReaderView: View {
                 pageCount = document?.pageCount ?? 0
                 loadError = document == nil || pageCount == 0 || document?.isLocked == true
             } else { loadError = true }
-            if resumePosition, let position = store.positions[manga.id], position.chapter == chapter {
+            if resumePosition, let position = store.chapterPosition(manga, chapter: chapter) {
                 page = position.normalized(chapterCount: manga.chapterCount, actualPageCount: pageCount).page
             }
             loading = false
@@ -120,7 +122,10 @@ struct ReaderView: View {
             UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && keepAwake
             resetHideTimer()
         }
-        .onChange(of: page) { _, _ in savePosition(); resetHideTimer() }
+        .onChange(of: page) { _, value in
+            if !loading && value == pageCount { page = max(0, pageCount - 1); nextPage() }
+            else { savePosition(); resetHideTimer() }
+        }
         .onChange(of: voiceOver) { _, enabled in if enabled { revealControls() } else { resetHideTimer() } }
         .onChange(of: autoHide) { _, enabled in if enabled { resetHideTimer() } else { revealControls() } }
         .onChange(of: keepAwake) { _, enabled in UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && enabled }
@@ -138,8 +143,14 @@ struct ReaderView: View {
         .sheet(isPresented: $showChapters, onDismiss: resetHideTimer) {
             NavigationStack {
                 List(1...manga.chapterCount, id: \.self) { number in
-                    Button { changeChapter(number); showChapters = false } label: {
-                        HStack { Text("Chapter \(number)"); Spacer(); if number == chapter { Image(systemName: "checkmark") } }
+                    Button { changeChapter(number, resumeSaved: true); showChapters = false } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Chapter \(number)")
+                                ChapterProgressView(position: store.chapterPosition(manga, chapter: number))
+                            }
+                            Spacer(); if number == chapter { Image(systemName: "checkmark") }
+                        }
                     }
                 }.scrollContentBackground(.hidden).pageBackground()
                     .navigationTitle("Chapters").navigationBarTitleDisplayMode(.inline)
@@ -172,8 +183,10 @@ struct ReaderView: View {
         guard !loading, !loadError else { return }
         store.record(manga, chapter: chapter, page: page, count: pageCount)
     }
-    private func changeChapter(_ number: Int) {
-        withAnimation(Motion(reduced: reduceMotion).standard) { chapter = number; page = 0 }
+    private func changeChapter(_ number: Int, resumeSaved: Bool = false) {
+        savePosition()
+        let target = resumeSaved ? store.chapterPosition(manga, chapter: number)?.normalized(chapterCount: manga.chapterCount, actualPageCount: pageCount).page ?? 0 : 0
+        withAnimation(Motion(reduced: reduceMotion).standard) { chapter = number; page = target }
         savePosition(); revealControls()
     }
     private func previousPage() {
@@ -231,12 +244,16 @@ struct VerticalReaderPages<Content: View>: View {
     let count: Int
     @Binding var page: Int
     let content: (Int, CGFloat) -> Content
+    var onEnd: () -> Void
     @State private var visiblePage: Int?
+    @State private var atEnd = false
+    @State private var startedAtEnd: Bool?
 
-    init(count: Int, page: Binding<Int>, @ViewBuilder content: @escaping (Int, CGFloat) -> Content) {
+    init(count: Int, page: Binding<Int>, onEnd: @escaping () -> Void, @ViewBuilder content: @escaping (Int, CGFloat) -> Content) {
         self.count = count
         _page = page
         self.content = content
+        self.onEnd = onEnd
         _visiblePage = State(initialValue: page.wrappedValue)
     }
 
@@ -250,7 +267,23 @@ struct VerticalReaderPages<Content: View>: View {
                             .id(index)
                     }
                 }.scrollTargetLayout()
+                    .background {
+                        GeometryReader { contentGeometry in
+                            Color.clear.preference(key: ReaderBottomKey.self,
+                                value: contentGeometry.frame(in: .named("readerScroll")).maxY)
+                        }
+                    }
             }
+            .coordinateSpace(name: "readerScroll")
+            .scrollBounceBehavior(.always)
+            .onPreferenceChange(ReaderBottomKey.self) { bottom in atEnd = bottom <= geometry.size.height + 2 }
+            .simultaneousGesture(DragGesture(minimumDistance: 10)
+                .onChanged { _ in if startedAtEnd == nil { startedAtEnd = atEnd } }
+                .onEnded { value in
+                    let advance = startedAtEnd == true && atEnd && value.translation.height < -65
+                    startedAtEnd = nil
+                    if advance { onEnd() }
+                })
             .scrollPosition(id: $visiblePage, anchor: .top)
             .onChange(of: visiblePage) { _, value in
                 if let value, value != page { page = value }
@@ -260,6 +293,11 @@ struct VerticalReaderPages<Content: View>: View {
             }
         }
     }
+}
+
+private struct ReaderBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 struct ReaderModeButton: View {
@@ -280,9 +318,19 @@ struct ContinuousPDFView: UIViewRepresentable {
     let document: PDFDocument
     @Binding var page: Int
     var onTap: () -> Void
+    var onEnd: () -> Void
 
     class Coordinator: PDFPageView.Coordinator {
         var selection: Binding<Int>
+        var onEnd: () -> Void = {}
+        var startedAtEnd = false
+        @objc func endPan(_ gesture: UIPanGestureRecognizer) {
+            guard let scroll = gesture.view as? UIScrollView else { return }
+            let bottom = max(-scroll.adjustedContentInset.top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            if gesture.state == .began { startedAtEnd = scroll.contentOffset.y >= bottom - 2 && scroll.zoomScale <= scroll.minimumZoomScale + 0.01 }
+            if gesture.state == .ended, startedAtEnd, scroll.contentOffset.y >= bottom - 2,
+               gesture.translation(in: scroll).y < -65 { startedAtEnd = false; onEnd() }
+        }
         init(selection: Binding<Int>, onTap: @escaping () -> Void) {
             self.selection = selection
             super.init(onTap: onTap)
@@ -314,11 +362,22 @@ struct ContinuousPDFView: UIViewRepresentable {
         tap.cancelsTouchesInView = false
         tap.delegate = context.coordinator
         view.addGestureRecognizer(tap)
+        context.coordinator.onEnd = onEnd
+        DispatchQueue.main.async {
+            func observe(_ child: UIView) {
+                if let scroll = child as? UIScrollView {
+                    scroll.panGestureRecognizer.addTarget(context.coordinator, action: #selector(Coordinator.endPan(_:)))
+                }
+                child.subviews.forEach(observe)
+            }
+            observe(view)
+        }
         return view
     }
     func updateUIView(_ view: PDFView, context: Context) {
         context.coordinator.selection = $page
         context.coordinator.onTap = onTap
+        context.coordinator.onEnd = onEnd
         if view.document !== document { view.document = document }
         if let target = document.page(at: page), view.currentPage !== target { view.go(to: target) }
     }

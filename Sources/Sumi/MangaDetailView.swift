@@ -76,6 +76,11 @@ struct MangaDetailView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                if let url = manga.documentURL {
+                    ShareLink(item: url) { Label("Export PDF", systemImage: "square.and.arrow.up") }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 if store.positions[manga.id] != nil {
                     Menu {
                         Button("Mark as unread", systemImage: "arrow.counterclockwise") { confirmingReset = true }
@@ -160,6 +165,7 @@ struct MangaDetailView: View {
                     .font(Design.font(.body).weight(.medium)).foregroundStyle(.primary)
                 Text(store.positions[manga.id]?.chapter == number ? "Continue where you left off" : "Available offline")
                     .font(Design.font(.caption)).foregroundStyle(.secondary)
+                ChapterProgressView(position: store.chapterPosition(manga, chapter: number))
             }
             Spacer(minLength: 4)
             Image(systemName: store.positions[manga.id]?.chapter == number ? "book.fill" : "chevron.right")
@@ -172,6 +178,21 @@ struct ChapterSelection: Identifiable {
     let number: Int
     var resumePosition = true
     var id: Int { number }
+}
+
+struct ChapterProgressView: View {
+    let position: ReadingPosition?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let position {
+                Text(position.chapterProgress == 1 ? "Completed" : "Page \(position.page + 1) / \(position.pageCount) · \(Int(position.chapterProgress * 100))%")
+                    .font(Design.font(.caption)).foregroundStyle(.secondary)
+                ProgressView(value: position.chapterProgress).tint(Design.accent).frame(maxWidth: 160)
+            } else {
+                Text("Unread").font(Design.font(.caption)).foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
 private struct HeaderOffsetKey: PreferenceKey {

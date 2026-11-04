@@ -94,19 +94,89 @@ struct SourceTitle: Codable, Identifiable {
     }
 }
 
+/// Legacy extensions return an array; paginated extensions return this envelope.
+struct SourceSearchResult: Decodable {
+    let titles: [SourceTitle]
+    let nextPage: String?
+
+    private enum CodingKeys: String, CodingKey { case titles, nextPage }
+
+    init(from decoder: Decoder) throws {
+        if let values = try? decoder.unkeyedContainer() {
+            var values = values
+            var titles: [SourceTitle] = []
+            while !values.isAtEnd { titles.append(try values.decode(SourceTitle.self)) }
+            self.titles = titles; nextPage = nil
+        } else {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            titles = try values.decode([SourceTitle].self, forKey: .titles)
+            nextPage = try values.decodeIfPresent(String.self, forKey: .nextPage)
+        }
+    }
+}
+
+struct SourceCatalogPage {
+    let titles: [Manga]
+    let nextPage: String?
+}
+
 struct SourceFilterOption: Codable, Identifiable, Hashable {
     let id: String
     let name: String
+}
+
+struct SourceFilterGroup: Codable, Identifiable {
+    let id: String
+    let name: String
+    let options: [SourceFilterOption]
+    var multiple: Bool = false
+
+    private enum CodingKeys: String, CodingKey { case id, name, options, multiple }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        options = try values.decode([SourceFilterOption].self, forKey: .options)
+        multiple = try values.decodeIfPresent(Bool.self, forKey: .multiple) ?? false
+    }
 }
 
 struct SourceFilters: Codable {
     var tags: [SourceFilterOption] = []
     var statuses: [SourceFilterOption] = []
     var sortOrders: [SourceFilterOption] = []
-    var isEmpty: Bool { tags.isEmpty && statuses.isEmpty && sortOrders.isEmpty }
+    var supportsNSFW = false
+    var supportsExcludedTags = false
+    var tagModes = ["AND", "OR"]
+    var groups: [SourceFilterGroup] = []
+    var isEmpty: Bool { tags.isEmpty && statuses.isEmpty && sortOrders.isEmpty && groups.isEmpty }
+
+    init(tags: [SourceFilterOption] = [], statuses: [SourceFilterOption] = [],
+         sortOrders: [SourceFilterOption] = [], supportsNSFW: Bool = false) {
+        self.tags = tags; self.statuses = statuses; self.sortOrders = sortOrders
+        self.supportsNSFW = supportsNSFW
+    }
+
+    private enum CodingKeys: String, CodingKey { case tags, statuses, sortOrders, supportsNSFW, supportsExcludedTags, tagModes, groups }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        tags = try values.decodeIfPresent([SourceFilterOption].self, forKey: .tags) ?? []
+        statuses = try values.decodeIfPresent([SourceFilterOption].self, forKey: .statuses) ?? []
+        sortOrders = try values.decodeIfPresent([SourceFilterOption].self, forKey: .sortOrders) ?? []
+        supportsNSFW = try values.decodeIfPresent(Bool.self, forKey: .supportsNSFW) ?? false
+        supportsExcludedTags = try values.decodeIfPresent(Bool.self, forKey: .supportsExcludedTags) ?? false
+        tagModes = try values.decodeIfPresent([String].self, forKey: .tagModes) ?? ["AND", "OR"]
+        groups = try values.decodeIfPresent([SourceFilterGroup].self, forKey: .groups) ?? []
+    }
 
     func validate() throws {
-        for options in [tags, statuses, sortOrders] {
+        guard groups.count <= 30, Set(groups.map(\.id)).count == groups.count,
+              groups.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 100 && !$0.name.isEmpty && $0.name.count <= 120 }),
+              !tagModes.isEmpty, Set(tagModes).count == tagModes.count, tagModes.allSatisfy({ ["AND", "OR"].contains($0) }) else {
+            throw SourceError.invalid("The source returned invalid search filter groups.")
+        }
+        for options in [tags, statuses, sortOrders] + groups.map(\.options) {
             guard options.count <= 500, Set(options.map(\.id)).count == options.count,
                   options.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 500 && !$0.name.isEmpty && $0.name.count <= 120 }) else {
                 throw SourceError.invalid("The source returned invalid search filters.")
@@ -117,12 +187,21 @@ struct SourceFilters: Codable {
 
 struct SourceSearchSelection: Equatable {
     var tags: Set<String> = []
+    var excludedTags: Set<String> = []
     var tagMode = "AND"
     var status = ""
     var sort = ""
-    var count: Int { tags.count + (status.isEmpty ? 0 : 1) + (sort.isEmpty ? 0 : 1) }
+    var values: [String: Set<String>] = [:]
+    var count: Int { tags.count + excludedTags.count + values.values.reduce(0) { $0 + $1.count } + (status.isEmpty ? 0 : 1) + (sort.isEmpty ? 0 : 1) }
+    var key: String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        return String(data: try! encoder.encode(input), encoding: .utf8)!
+    }
     var input: [String: String] {
-        ["tags": String(data: try! JSONEncoder().encode(tags.sorted()), encoding: .utf8)!,
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        return ["tags": String(data: try! encoder.encode(tags.sorted()), encoding: .utf8)!,
+         "excludedTags": String(data: try! JSONEncoder().encode(excludedTags.sorted()), encoding: .utf8)!,
+         "filters": String(data: try! encoder.encode(values.mapValues { $0.sorted() }), encoding: .utf8)!,
          "tagMode": tagMode, "status": status, "sort": sort]
     }
 }
@@ -138,6 +217,9 @@ enum SourcePolicy {
         host.contains(".") && host.count <= 253 && !host.hasSuffix(".local") &&
         !host.hasSuffix(".localhost") && !host.hasSuffix(".internal") &&
         !host.allSatisfy({ $0.isNumber || $0 == "." }) &&
+        !host.split(separator: ".").allSatisfy({ label in
+            label.allSatisfy(\.isNumber) || (label.hasPrefix("0x") && label.dropFirst(2).allSatisfy(\.isHexDigit))
+        }) &&
         host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
             !$0.isEmpty && $0.count <= 63 && !$0.hasPrefix("-") && !$0.hasSuffix("-") &&
             $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }

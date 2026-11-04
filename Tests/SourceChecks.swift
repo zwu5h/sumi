@@ -7,6 +7,9 @@ enum SourceChecks {
             do { try operation(); preconditionFailure("Expected rejection") } catch { }
         }
         let allowed = ["api.example.org"]
+        for host in ["0x7f.0.0.1", "0x7f.1"] {
+            rejects { try SourcePolicy.check(URL(string: "https://" + host + "/")!, hosts: [host]) }
+        }
         try SourcePolicy.check(URL(string: "https://api.example.org/catalog")!, hosts: allowed)
         for text in ["http://api.example.org/catalog", "file:///tmp/test", "https://api.example.org.evil.org/",
                      "https://images.example.org/", "https://user:password@api.example.org/",
@@ -55,6 +58,16 @@ enum SourceChecks {
         rejects { try SourceFilters(tags: [tag, tag]).validate() }
         rejects { try SourceFilters(statuses: [.init(id: "", name: "Invalid")]).validate() }
         rejects { try SourceFilters(sortOrders: [.init(id: "title", name: "")]).validate() }
+        let legacyFilters = try JSONDecoder().decode(SourceFilters.self, from: Data("{\"tags\":[{\"id\":\"adventure\",\"name\":\"Adventure\"}],\"statuses\":[],\"sortOrders\":[]}".utf8))
+        precondition(!legacyFilters.supportsNSFW && !legacyFilters.isEmpty)
+        let noFilters = try JSONDecoder().decode(SourceFilters.self, from: Data("{}".utf8))
+        precondition(noFilters.isEmpty && !noFilters.supportsNSFW)
+        let contentOnly = try JSONDecoder().decode(SourceFilters.self, from: Data("{\"supportsNSFW\":true}".utf8))
+        precondition(contentOnly.supportsNSFW && contentOnly.isEmpty)
+        try contentOnly.validate()
+        let roundTrip = try JSONDecoder().decode(SourceFilters.self, from: JSONEncoder().encode(contentOnly))
+        precondition(roundTrip.supportsNSFW)
+        rejects { _ = try JSONDecoder().decode(SourceFilters.self, from: Data("{\"supportsNSFW\":\"true\"}".utf8)) }
         var selection = SourceSearchSelection()
         precondition(selection.count == 0)
         selection.tags = ["fantasy", "adventure"]
@@ -63,6 +76,16 @@ enum SourceChecks {
         let selectedTags = try JSONDecoder().decode([String].self, from: Data(selection.input["tags"]!.utf8))
         precondition(selectedTags == ["adventure", "fantasy"])
         precondition(selection.input["tagMode"] == "OR" && selection.input["status"] == "completed" && selection.input["sort"] == "title")
+        selection.excludedTags = ["romance"]
+        selection.values = ["type": ["manhwa"], "demographic": ["seinen", "shounen"]]
+        precondition(selection.count == 8)
+        let key = selection.key
+        for _ in 0..<20 { precondition(selection.key == key, "Search identity must be deterministic") }
+        let advanced = try JSONDecoder().decode(SourceFilters.self, from: Data("""
+        {"supportsExcludedTags":true,"tagModes":["AND"],"groups":[{"id":"type","name":"Type","options":[{"id":"manhwa","name":"Manhwa"}]}]}
+        """.utf8))
+        try advanced.validate()
+        precondition(advanced.groups.count == 1 && !advanced.groups[0].multiple && advanced.supportsExcludedTags)
 
         // Older local PDFs have no remote field; the existing library must still decode.
         let legacy = Data("""
@@ -72,6 +95,21 @@ enum SourceChecks {
         precondition(local.remote == nil && local.fileName == "old.pdf")
 
         let store = LibraryStore()
+        let legacySearch = try JSONDecoder().decode(SourceSearchResult.self, from: Data("[]".utf8))
+        precondition(legacySearch.titles.isEmpty && legacySearch.nextPage == nil)
+        let emptyPage = try JSONDecoder().decode(SourceSearchResult.self, from: Data("{\"titles\":[],\"nextPage\":\"2\"}".utf8))
+        precondition(emptyPage.titles.isEmpty && emptyPage.nextPage == "2", "Filtered empty pages must retain pagination")
+        let finalPage = try JSONDecoder().decode(SourceSearchResult.self, from: Data("{\"titles\":[],\"nextPage\":null}".utf8))
+        precondition(finalPage.nextPage == nil)
+        rejects { _ = try JSONDecoder().decode(SourceSearchResult.self, from: Data("{\"titles\":[],\"nextPage\":2}".utf8)) }
+        // Tall strips retain their original reading width instead of shrinking to 144 px.
+        precondition(SourceImageSizing.maximumPixelSize(width: 800, height: 20000, cover: false) == 20000)
+        precondition(SourceImageSizing.maximumPixelSize(width: 2400, height: 3600, cover: false) == 3600)
+        let huge = SourceImageSizing.maximumPixelSize(width: 8000, height: 80000, cover: false)!
+        precondition(Double(huge * huge) / 10 <= 32_000_000)
+        precondition(SourceImageSizing.maximumPixelSize(width: 2400, height: 3600, cover: true) == 1080)
+        precondition(SourceImageSizing.maximumPixelSize(width: 0, height: 10, cover: false) == nil)
+        precondition(SourceImageSizing.maximumPixelSize(width: .infinity, height: 10, cover: false) == nil)
         let first = SourceChapter(id: "one", title: "One", credit: "Creator")
         let second = SourceChapter(id: "two", title: "Two", credit: "Creator")
         var manga = Manga(id: "source:test:book", title: "Remote book", author: "Creator", synopsis: "", genre: "Test", chapterCount: 2,
@@ -80,12 +118,23 @@ enum SourceChecks {
         store.rememberRemote(manga)
         store.toggleSaved(manga)
         store.record(manga, chapter: 2, page: 1, count: 4)
+        precondition(store.chapterPosition(manga, chapter: 1) == nil, "Skipping chapters must leave them unread")
+        precondition(store.chapterPosition(manga, chapter: 2)?.chapterProgress == 0.5)
+        precondition(store.progress(for: manga) == 0.25 && !store.isComplete(manga))
+        store.record(manga, chapter: 1, page: 3, count: 4)
+        precondition(store.chapterPosition(manga, chapter: 2)?.page == 1, "Reading another chapter must retain its position")
+        store.record(manga, chapter: 2, page: 1, count: 4)
         manga.remote?.chapters = [second, first]
         store.rememberRemote(manga)
         precondition(store.positions[manga.id]?.chapter == 1 && store.positions[manga.id]?.page == 1)
         let restored = LibraryStore()
         precondition(restored.library.contains { $0.id == manga.id })
         precondition(restored.remoteTitles.first { $0.id == manga.id }?.remote?.chapters == [second, first])
+        precondition(restored.chapterPosition(manga, chapter: 1)?.page == 1)
+        precondition(restored.chapterPosition(manga, chapter: 2)?.chapterProgress == 1)
+        store.record(manga, chapter: 1, page: 3, count: 4)
+        precondition(store.isComplete(manga))
+        store.record(manga, chapter: 1, page: 1, count: 4)
         store.toggleSaved(manga)
         precondition(!LibraryStore().library.contains { $0.id == manga.id }, "Unsaving must persist")
         store.toggleSaved(manga)
@@ -103,6 +152,7 @@ enum SourceChecks {
         store.rememberRemote(manga)
         precondition(store.positions[manga.id] == nil, "Removed chapter must not resume at an unrelated chapter")
         store.markUnread(manga)
+        precondition(store.chapterPositions[manga.id] == nil)
         print("PASS: repository validation, exact/scoped HTTPS permissions and suffix boundaries, legacy PDF decoding, remote library persistence and stable chapter IDs")
     }
 }

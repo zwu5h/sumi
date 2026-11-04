@@ -46,6 +46,11 @@ for (const manifest of repository.extensions) {
     return ok([title, {...title, id: chapterID(9), attributes: {...title.attributes, contentRating: 'pornographic'}}]);
   });
   assert.equal(titles.length, 1);
+  const safeOnly = await call('search', {query: '', allowNSFW: 'true', filters: JSON.stringify({contentRating: ['safe']})}, url => {
+    assert.deepEqual(url.searchParams.getAll('contentRating[]'), ['safe']);
+    return ok([title, {...title, id: chapterID(9), attributes: {...title.attributes, contentRating: 'pornographic'}}]);
+  });
+  assert.equal(safeOnly.length, 1, 'Explicit content filter must also apply to returned items');
   assert.equal(titles[0].title, 'Local title');
   assert.equal(titles[0].author, 'Author');
   assert.equal(titles[0].genre, 'Adventure');
@@ -88,14 +93,27 @@ for (const manifest of repository.extensions) {
     return home;
   };
   const pages = await call('pages', {mangaID: book, chapterID: chapterID(11)}, pagesHandler(atHome));
-  assert.deepEqual(pages, ['https://node.mangadex.network/temporary-token/data-saver/' + 'a'.repeat(32) + '/small.jpg']);
+  assert.deepEqual(pages, ['https://node.mangadex.network/temporary-token/data/' + 'a'.repeat(32) + '/full.png']);
+  const compressed = structuredClone(atHome); compressed.chapter.data = [];
+  assert.match((await call('pages', {mangaID: book, chapterID: chapterID(11)}, pagesHandler(compressed)))[0], /\/data-saver\//);
+  for (const [page, total, nextPage] of [['1', 51, '2'], ['2', 51, null]]) {
+    const result = await call('search', {page, query: 'Hero'}, url => {
+      assert.equal(url.searchParams.get('offset'), String((Number(page) - 1) * 50));
+      assert.equal(url.searchParams.get('title'), 'Hero');
+      return {result: 'ok', data: [title], offset: (Number(page) - 1) * 50, total};
+    });
+    assert.equal(result.titles.length, 1); assert.equal(result.nextPage, nextPage);
+  }
+  for (const page of ['0', '-1', 'NaN', '201', '1.5']) {
+    await assert.rejects(call('search', {page}, () => assert.fail('Invalid catalog page requested')));
+  }
   const full = structuredClone(atHome); full.chapter.dataSaver = [];
   assert.match((await call('pages', {mangaID: book, chapterID: chapterID(11)}, pagesHandler(full)))[0], /\/data\//);
   for (const baseUrl of ['http://node.mangadex.network', 'https://mangadex.network.evil.org',
     'https://evil-mangadex.network', 'https://node.mangadex.network:444', 'https://user:secret@node.mangadex.network']) {
     await assert.rejects(call('pages', {mangaID: book, chapterID: chapterID(11)}, pagesHandler({...atHome, baseUrl})), /outside this source/);
   }
-  const badFile = structuredClone(atHome); badFile.chapter.dataSaver = ['../escape.jpg'];
+  const badFile = structuredClone(atHome); badFile.chapter.data = ['../escape.jpg'];
   await assert.rejects(call('pages', {mangaID: book, chapterID: chapterID(11)}, pagesHandler(badFile)), /invalid page/);
   await assert.rejects(call('pages', {mangaID: chapterID(99), chapterID: chapterID(11)}, pagesHandler(atHome)), /no longer available/);
   await assert.rejects(call('chapters', {mangaID: 'invalid'}, () => assert.fail('Must not request invalid IDs')), /Invalid MangaDex/);

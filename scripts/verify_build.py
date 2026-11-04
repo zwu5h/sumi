@@ -10,6 +10,7 @@ import zipfile
 parser = argparse.ArgumentParser()
 parser.add_argument("--expect-glass", choices=["native", "fallback"], required=True)
 parser.add_argument("--ipa", action="store_true")
+parser.add_argument("--app-store", action="store_true", help="Also require SDK 26+; signing and review eligibility are separate")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 manifest = json.loads(subprocess.check_output(["swift", "package", "dump-package"], cwd=root))
@@ -37,6 +38,22 @@ binary = read_file(info["CFBundleExecutable"])
 magic, cpu_type = struct.unpack_from("<II", binary)
 assert magic == 0xFEEDFACF, "Expected a 64-bit Mach-O executable"
 assert cpu_type == 0x100000C, "Expected an arm64 device build"
+offset = 32
+sdk_version = None
+for _ in range(struct.unpack_from("<I", binary, 16)[0]):
+    command, size = struct.unpack_from("<II", binary, offset)
+    assert size >= 8 and offset + size <= len(binary), "Invalid Mach-O load command"
+    if command == 0x32:
+        sdk_version = struct.unpack_from("<I", binary, offset + 16)[0]
+    offset += size
+assert sdk_version is not None, "Missing SDK build version"
+if args.app_store:
+    assert sdk_version >= (26 << 16), "App Store requires SDK 26+, not just an iOS 17 deployment target"
+print(f"Build SDK: {sdk_version >> 16}.{(sdk_version >> 8) & 255}; signing and App Review not checked")
+privacy = plistlib.loads(read_file("PrivacyInfo.xcprivacy"))
+assert privacy["NSPrivacyTracking"] is False
+assert any(item["NSPrivacyAccessedAPIType"] == "NSPrivacyAccessedAPICategoryUserDefaults" and "CA92.1" in item["NSPrivacyAccessedAPITypeReasons"] for item in privacy["NSPrivacyAccessedAPITypes"])
+assert info.get("UIFileSharingEnabled") is False and info.get("LSSupportsOpeningDocumentsInPlace") is False
 assert (b"glassEffect" in binary) == native, "Executable does not match expected Glass API path"
 for artwork in ("sumi-logo",):
     content = read_file(f"Sumi_Sumi.bundle/{artwork}.png")

@@ -5,7 +5,6 @@ import CryptoKit
 final class SourceStore: ObservableObject {
     @Published private(set) var repositories: [SourceRepository] = []
     @Published private(set) var installed: [InstalledSource] = []
-    @Published private(set) var nsfwSourceIDs: Set<String> = []
     @Published private(set) var busy = false
     @Published var error: String?
     private let file: URL
@@ -13,11 +12,12 @@ final class SourceStore: ObservableObject {
     private struct State: Codable {
         var repositories: [SourceRepository]
         var installed: [InstalledSource]
-        var nsfwSourceIDs: Set<String>?
     }
 
     init() {
         file = LibraryStore.documents.appendingPathComponent("sources-v1.json")
+        do { try LibraryStore.migrateDocuments() }
+        catch { self.error = "Couldn’t migrate sources: \(error.localizedDescription)"; return }
         guard FileManager.default.fileExists(atPath: file.path) else { return }
         do {
             let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
@@ -33,35 +33,36 @@ final class SourceStore: ObservableObject {
             }
             repositories = state.repositories
             installed = state.installed
-            nsfwSourceIDs = state.nsfwSourceIDs ?? []
-        } catch { self.error = "Couldn’t restore sources: \(error.localizedDescription)" }
+        } catch {
+            // Keep the unreadable original even if the user subsequently installs a source.
+            do {
+                try FileManager.default.copyItem(at: file, to: file.appendingPathExtension("recovery-" + UUID().uuidString))
+            } catch {
+                // Refuse all writes if a recovery copy cannot be made.
+                restoreBlocked = true
+            }
+            self.error = "Couldn’t restore sources. The original data has been preserved."
+        }
     }
+
+    private var restoreBlocked = false
 
     private static func digest(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func commit(repositories: [SourceRepository], installed: [InstalledSource], nsfwSourceIDs: Set<String>? = nil) throws {
-        let preferences = (nsfwSourceIDs ?? self.nsfwSourceIDs).intersection(installed.map(\.id))
-        let data = try JSONEncoder().encode(State(repositories: repositories, installed: installed, nsfwSourceIDs: preferences))
+    private func commit(repositories: [SourceRepository], installed: [InstalledSource]) throws {
+        guard !restoreBlocked else { throw SourceError.invalid("Source data could not be backed up. Free storage and restart before making changes.") }
+        let data = try JSONEncoder().encode(State(repositories: repositories, installed: installed))
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: file, options: .atomic)
         self.repositories = repositories
         self.installed = installed
-        self.nsfwSourceIDs = preferences
     }
 
-    func setAllowNSFW(_ allowed: Bool, sourceID: String) {
-        do {
-            _ = try source(sourceID)
-            var preferences = nsfwSourceIDs
-            if allowed { preferences.insert(sourceID) } else { preferences.remove(sourceID) }
-            try commit(repositories: repositories, installed: installed, nsfwSourceIDs: preferences)
-        } catch { self.error = error.localizedDescription }
-    }
-
-    private func contentInput(sourceID: String) -> [String: String] {
-        ["allowNSFW": nsfwSourceIDs.contains(sourceID) ? "true" : "false"]
+    private var contentInput: [String: String] {
+        // Compatibility for existing adapters: source filters control content ratings.
+        ["allowNSFW": "true"]
     }
 
     func addRepository(_ text: String) async {
@@ -132,24 +133,31 @@ final class SourceStore: ObservableObject {
         return filters
     }
 
-    func search(sourceID: String, query: String, selection: SourceSearchSelection = .init()) async throws -> [Manga] {
+    func search(sourceID: String, query: String, selection: SourceSearchSelection = .init(), page: String = "1") async throws -> SourceCatalogPage {
         let source = try source(sourceID)
         var input = selection.input
-        input.merge(contentInput(sourceID: sourceID)) { _, value in value }
+        input.merge(contentInput) { _, value in value }
         input["query"] = query
-        let titles = try await SourceRuntime(hosts: source.manifest.hosts).call("search", input: input, source: source, as: [SourceTitle].self)
+        input["page"] = page
+        let result = try await SourceRuntime(hosts: source.manifest.hosts).call("search", input: input, source: source, as: SourceSearchResult.self)
+        let titles = result.titles
+        if let next = result.nextPage {
+            guard !next.isEmpty, next.count <= 2000, next != page else {
+                throw SourceError.invalid("The source returned an invalid next page.")
+            }
+        }
         guard titles.count <= 200, Set(titles.map(\.id)).count == titles.count,
               titles.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 500 && !$0.title.isEmpty }) else {
             throw SourceError.invalid("The extension returned an invalid title list.")
         }
         for title in titles { if let cover = title.cover { try SourcePolicy.check(cover, hosts: source.manifest.hosts) } }
         try ensureCurrent(source)
-        return titles.map { $0.manga(sourceID: sourceID) }
+        return SourceCatalogPage(titles: titles.map { $0.manga(sourceID: sourceID) }, nextPage: result.nextPage)
     }
 
     func chapters(_ reference: RemoteMangaReference) async throws -> [SourceChapter] {
         let source = try source(reference.sourceID)
-        var input = contentInput(sourceID: reference.sourceID)
+        var input = contentInput
         input["mangaID"] = reference.mangaID
         let chapters = try await SourceRuntime(hosts: source.manifest.hosts).call("chapters", input: input, source: source, as: [SourceChapter].self)
         guard !chapters.isEmpty, chapters.count <= 10_000, Set(chapters.map(\.id)).count == chapters.count,
@@ -162,7 +170,7 @@ final class SourceStore: ObservableObject {
 
     func pages(_ reference: RemoteMangaReference, chapterID: String) async throws -> [URL] {
         let source = try source(reference.sourceID)
-        var input = contentInput(sourceID: reference.sourceID)
+        var input = contentInput
         input["mangaID"] = reference.mangaID
         input["chapterID"] = chapterID
         let pages = try await SourceRuntime(hosts: source.manifest.hosts).call("pages", input: input, source: source, as: [URL].self)

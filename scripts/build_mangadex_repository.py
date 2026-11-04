@@ -27,7 +27,7 @@ def generated_files():
         files[name] = content
         extensions.append({
             "id": f"org.zwu5h.mangadex.{language}", "name": f"MangaDex · {label}",
-            "version": "1.0.0", "apiVersion": 1, "script": f"{BASE}/{name}", "sha256": digest,
+            "version": "1.4.0", "apiVersion": 1, "script": f"{BASE}/{name}", "sha256": digest,
             "hosts": ["api.mangadex.org", "uploads.mangadex.org", "*.mangadex.network"],
             "website": "https://mangadex.org/", "author": "zwu5h · unofficial adapter",
         })

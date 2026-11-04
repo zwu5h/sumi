@@ -14,9 +14,10 @@ with tempfile.TemporaryDirectory(prefix="sumi-import-") as directory:
     source = (root / "Sources/Sumi/LibraryStore.swift").read_text(encoding="utf-8")
     source = source.replace("import PDFKit\n", "").replace("import SwiftUI\n", "")
     source = source.replace(
-        "FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]",
+        'FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Sumi", isDirectory: true)',
         'URL(fileURLWithPath: ProcessInfo.processInfo.environment["SUMI_IMPORT_TEST_DIRECTORY"]!)',
     )
+    source = source.replace('manager.urls(for: .documentDirectory, in: .userDomainMask)[0]', 'documents.deletingLastPathComponent().appendingPathComponent("legacy")')
     adapted = directory / "LibraryStore.swift"
     adapted.write_text(source, encoding="utf-8")
     # Linux Foundation lacks URLSession.bytes. Keep the production request builder
@@ -26,11 +27,17 @@ with tempfile.TemporaryDirectory(prefix="sumi-import-") as directory:
     network = network.replace("import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n", 1)
     adapted_network = directory / "SourceNetwork.swift"
     adapted_network.write_text(network, encoding="utf-8")
+    profiles = directory / "ProfileStore.swift"
+    profiles.write_text((root / "Sources/Sumi/ProfileStore.swift").read_text(encoding="utf-8").replace("import SwiftUI\n", ""), encoding="utf-8")
     executable = directory / "library-import-checks"
     subprocess.run([
-        "swiftc", "-swift-version", "5", str(adapted),
+        "swiftc", "-swift-version", "5", str(adapted), str(profiles),
+        str(root / "Sources/Sumi/StoredData.swift"),
+        str(root / "Tests/ProfileChecks.swift"),
+        str(root / "Tests/SecurityRegressionChecks.swift"),
         str(root / "Sources/Sumi/ReadingPosition.swift"),
         str(root / "Sources/Sumi/SourceModels.swift"),
+        str(root / "Sources/Sumi/SourceImageSizing.swift"),
         str(adapted_network), str(root / "Tests/SourceNetworkChecks.swift"),
         str(root / "Tests/SourceChecks.swift"),
         str(root / "Tests/LibraryImportChecks.swift"), "-o", str(executable),

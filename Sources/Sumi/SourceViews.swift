@@ -149,28 +149,30 @@ struct SourceCatalogView: View {
     @State private var showingFilters = false
     @State private var filterError: String?
     @State private var loadingFilters = false
+    @State private var nextPage: String?
+    @State private var loadingMore = false
+    @State private var pageError: String?
+    @State private var pageRequest: UUID?
     private var source: InstalledSource? { sources.installed.first { $0.id == sourceID } }
     private var sourceKey: String { sourceID + ":" + (source.map { String($0.manifest.hashValue) } ?? "removed") }
-    private var allowNSFW: Bool { sources.nsfwSourceIDs.contains(sourceID) }
-    private var taskKey: String { sourceKey + ":" + query + ":\(retry):\(allowNSFW):" + selection.tags.sorted().joined(separator: ",") + ":" + selection.tagMode + ":" + selection.status + ":" + selection.sort }
+    private var activeFilterCount: Int { selection.count }
+    private var taskKey: String { sourceKey + ":" + query + ":\(retry):" + selection.key }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                if source != nil {
-                    Section {
-                        Toggle("Show NSFW content", isOn: Binding(
-                            get: { allowNSFW },
-                            set: { sources.setAllowNSFW($0, sourceID: sourceID) }
-                        ))
-                    } header: { Text("Content") } footer: {
-                        Text("Saved for this source. Requires an extension that supports NSFW content; update the source if needed.")
-                    }
+                if !filters.sortOrders.isEmpty {
+                    Picker("Browse", selection: $selection.sort) {
+                        Text("Source default").tag("")
+                        ForEach(filters.sortOrders) { Text($0.name).tag($0.id) }
+                    }.pickerStyle(.menu)
                 }
-                if selection.count > 0 {
-                    Section {
+                if activeFilterCount > 0 {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text(activeFilters).font(Design.font(.subheadline)).foregroundStyle(.secondary)
-                        Button("Clear filters") { selection = SourceSearchSelection() }
+                        if selection.count > 0 {
+                            Button("Clear filters") { selection = SourceSearchSelection() }
+                        }
                     }
                 }
                 if source == nil {
@@ -180,10 +182,14 @@ struct SourceCatalogView: View {
                 } else if let error {
                     Text(error).foregroundStyle(.secondary)
                     Button("Try again") { retry += 1 }
-                } else if results.isEmpty {
+                } else if results.isEmpty && nextPage == nil {
                     ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Try another title or change your filters."))
                 } else {
-                    Text("\(results.count) titles").font(Design.section).accessibilityAddTraits(.isHeader)
+                    HStack {
+                        Text("\(results.count) titles").font(Design.section).accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        if nextPage != nil { loadMoreButton }
+                    }
                     if layout == .list {
                         ForEach(results) { manga in
                             NavigationLink { MangaDetailView(manga: manga) } label: {
@@ -212,6 +218,10 @@ struct SourceCatalogView: View {
                             }
                         }
                     }
+                    if let pageError {
+                        Text(pageError).font(Design.font(.subheadline)).foregroundStyle(.secondary)
+                    }
+                    if nextPage != nil { loadMoreButton.frame(maxWidth: .infinity) }
                 }
             }.padding(Design.spacing).frame(maxWidth: Design.contentWidth)
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -219,9 +229,6 @@ struct SourceCatalogView: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle(source?.manifest.name ?? "Source")
             .searchable(text: $query, prompt: "Search this source")
-            .alert("Couldn’t save source setting", isPresented: Binding(get: { sources.error != nil }, set: { if !$0 { sources.error = nil } })) {
-                Button("OK") { sources.error = nil }
-            } message: { Text(sources.error ?? "") }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -237,12 +244,14 @@ struct SourceCatalogView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingFilters = true } label: {
-                        Label(selection.count > 0 ? "Filters (\(selection.count))" : "Filters", systemImage: selection.count > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        Label(activeFilterCount > 0 ? "Filters (\(activeFilterCount))" : "Filters", systemImage: activeFilterCount > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                     }.disabled(source == nil)
                 }
             }
             .sheet(isPresented: $showingFilters) {
-                SourceFilterView(filters: filters, selection: $selection, loading: loadingFilters, error: filterError) {
+                SourceFilterView(filters: filters, selection: selection, loading: loadingFilters, error: filterError, apply: { draft in
+                    selection = draft
+                }) {
                     Task { await loadFilters() }
                 }
             }
@@ -252,9 +261,21 @@ struct SourceCatalogView: View {
             }
             .task(id: taskKey) {
                 loading = true; results = []; error = nil
+                nextPage = nil; pageError = nil; loadingMore = false; pageRequest = nil
                 do { try await Task.sleep(for: .milliseconds(400)); try Task.checkCancellation(); await search() }
                 catch { }
             }
+    }
+
+    private var loadMoreButton: some View {
+        Button {
+            if let nextPage { Task { await loadMore(nextPage) } }
+        } label: {
+            HStack {
+                if loadingMore { ProgressView() }
+                Text(pageError == nil ? "Load more" : "Retry loading more")
+            }.frame(minHeight: 44)
+        }.buttonStyle(.bordered).disabled(loading || loadingMore)
     }
 
     private func titleInfo(_ manga: Manga) -> some View {
@@ -274,7 +295,14 @@ struct SourceCatalogView: View {
     }
 
     private var activeFilters: String {
-        var labels = filters.tags.filter { selection.tags.contains($0.id) }.map(\.name)
+        let tags = filters.tags.filter { selection.tags.contains($0.id) }.map(\.name)
+        var labels = tags.isEmpty ? [] : [tags.joined(separator: selection.tagMode == "OR" ? " OR " : " AND ")]
+        labels += filters.tags.filter { selection.excludedTags.contains($0.id) }.map { "Exclude: " + $0.name }
+        for group in filters.groups {
+            let selected = selection.values[group.id] ?? []
+            let names = group.options.isEmpty ? selected.sorted() : group.options.filter { selected.contains($0.id) }.map(\.name)
+            if !names.isEmpty { labels.append(group.name + ": " + names.joined(separator: ", ")) }
+        }
         if let status = filters.statuses.first(where: { $0.id == selection.status }) { labels.append(status.name) }
         if let sort = filters.sortOrders.first(where: { $0.id == selection.sort }) { labels.append(sort.name) }
         return labels.joined(separator: " · ")
@@ -287,7 +315,9 @@ struct SourceCatalogView: View {
             let value = try await sources.filters(sourceID: sourceID)
             try Task.checkCancellation()
             guard key == sourceKey else { return }
-            filters = value; loadingFilters = false
+            filters = value
+            if !value.tagModes.contains(selection.tagMode) { selection.tagMode = value.tagModes[0] }
+            loadingFilters = false
         } catch {
             guard !Task.isCancelled, key == sourceKey else { return }
             filterError = error.localizedDescription; loadingFilters = false
@@ -301,10 +331,29 @@ struct SourceCatalogView: View {
             let value = try await sources.search(sourceID: sourceID, query: query, selection: selection)
             try Task.checkCancellation()
             guard key == taskKey else { return }
-            results = value; loading = false
+            results = value.titles; nextPage = value.nextPage; loading = false
         } catch {
             guard !Task.isCancelled, key == taskKey else { return }
             self.error = error.localizedDescription; loading = false
+        }
+    }
+
+    @MainActor private func loadMore(_ cursor: String) async {
+        guard !loading, !loadingMore, cursor == nextPage else { return }
+        let key = taskKey
+        let request = UUID()
+        pageRequest = request; loadingMore = true; pageError = nil
+        defer { if pageRequest == request { loadingMore = false } }
+        do {
+            let value = try await sources.search(sourceID: sourceID, query: query, selection: selection, page: cursor)
+            try Task.checkCancellation()
+            guard key == taskKey, pageRequest == request else { return }
+            var seen = Set(results.map(\.id))
+            results.append(contentsOf: value.titles.filter { seen.insert($0.id).inserted })
+            nextPage = value.nextPage
+        } catch {
+            guard !Task.isCancelled, key == taskKey, pageRequest == request else { return }
+            pageError = error.localizedDescription
         }
     }
 }
@@ -312,9 +361,10 @@ struct SourceCatalogView: View {
 private struct SourceFilterView: View {
     @Environment(\.dismiss) private var dismiss
     let filters: SourceFilters
-    @Binding var selection: SourceSearchSelection
+    let selection: SourceSearchSelection
     let loading: Bool
     let error: String?
+    let apply: (SourceSearchSelection) -> Void
     let retry: () -> Void
     @State private var draft = SourceSearchSelection()
     @State private var tagQuery = ""
@@ -322,7 +372,6 @@ private struct SourceFilterView: View {
     private var visibleTags: [SourceFilterOption] {
         let term = tagQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         return filters.tags.filter { term.isEmpty || $0.name.localizedCaseInsensitiveContains(term) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     var body: some View {
@@ -354,33 +403,68 @@ private struct SourceFilterView: View {
                     if !filters.tags.isEmpty {
                         Section {
                             Picker("Match tags", selection: $draft.tagMode) {
-                                Text("All selected").tag("AND")
-                                Text("Any selected").tag("OR")
-                            }
+                                ForEach(filters.tagModes, id: \.self) { Text($0).tag($0) }
+                            }.pickerStyle(.segmented).disabled(filters.tagModes.count == 1)
+                                .accessibilityLabel("Match selected tags")
                             TextField("Search tags", text: $tagQuery).autocorrectionDisabled()
                                 .accessibilityLabel("Search tags")
                             if visibleTags.isEmpty { Text("No matching tags").foregroundStyle(.secondary) }
                             ForEach(visibleTags) { tag in
                                 Button {
-                                    if !draft.tags.insert(tag.id).inserted { draft.tags.remove(tag.id) }
+                                    if draft.tags.remove(tag.id) != nil {
+                                        if filters.supportsExcludedTags { draft.excludedTags.insert(tag.id) }
+                                    } else if draft.excludedTags.remove(tag.id) == nil { draft.tags.insert(tag.id) }
                                 } label: {
                                     HStack {
                                         Text(tag.name).foregroundStyle(.primary)
                                         Spacer()
-                                        Image(systemName: draft.tags.contains(tag.id) ? "checkmark.circle.fill" : "circle")
+                                        Text(draft.excludedTags.contains(tag.id) ? "Excluded" : draft.tags.contains(tag.id) ? "Included" : "Any")
+                                            .font(Design.font(.caption)).foregroundStyle(.secondary)
+                                        Image(systemName: draft.excludedTags.contains(tag.id) ? "minus.circle.fill" : draft.tags.contains(tag.id) ? "checkmark.circle.fill" : "circle")
                                     }.frame(minHeight: 44)
                                 }.accessibilityAddTraits(draft.tags.contains(tag.id) ? [.isSelected] : [])
                             }
-                        } header: { Text("Tags (\(draft.tags.count) selected)") }
+                        } header: { Text("Tags (\(draft.tags.count) selected)") } footer: {
+                            Text(draft.tagMode == "OR" ? "OR: Match at least one selected tag." : "AND: Match every selected tag.")
+                            if filters.supportsExcludedTags { Text("Tap a tag to cycle: Any → Included → Excluded.") }
+                        }
                     }
-                    Section { Button("Reset filters") { draft = SourceSearchSelection(); tagQuery = "" } }
+                    ForEach(filters.groups) { group in
+                        Section(group.name) {
+                            if group.options.isEmpty {
+                                TextField(group.name, text: Binding(get: { draft.values[group.id]?.first ?? "" }, set: { draft.values[group.id] = $0.isEmpty ? [] : [$0] }))
+                                    .autocorrectionDisabled()
+                            } else if !group.multiple, group.options.count == 1, let option = group.options.first {
+                                Toggle(option.name, isOn: Binding(get: { draft.values[group.id]?.contains(option.id) == true }, set: { selected in
+                                    draft.values[group.id] = selected ? [option.id] : []
+                                }))
+                            } else if group.multiple {
+                                ForEach(group.options) { option in
+                                    Toggle(option.name, isOn: Binding(get: { draft.values[group.id]?.contains(option.id) == true }, set: { selected in
+                                        if selected { draft.values[group.id, default: []].insert(option.id) }
+                                        else { draft.values[group.id]?.remove(option.id) }
+                                    }))
+                                }
+                            } else {
+                                Picker(group.name, selection: Binding(get: { draft.values[group.id]?.first ?? "" }, set: { draft.values[group.id] = $0.isEmpty ? [] : [$0] })) {
+                                    Text("Source default").tag("")
+                                    ForEach(group.options) { Text($0.name).tag($0.id) }
+                                }
+                            }
+                        }
+                    }
+                    Section { Button("Reset filters") {
+                        draft = SourceSearchSelection(); draft.tagMode = filters.tagModes[0]; tagQuery = ""
+                    } }
                 }
             }.scrollContentBackground(.hidden).pageBackground()
                 .navigationTitle("Filters").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Apply") { selection = draft; dismiss() }.disabled(loading || error != nil || filters.isEmpty)
+                        Button("Apply") {
+                            apply(draft); dismiss()
+                        }.disabled(loading || error != nil || filters.isEmpty)
                     }
                 }
                 .onAppear { draft = selection }
@@ -429,10 +513,14 @@ struct SourceImage: View {
                 try Task.checkCancellation()
                 let decoded = await Task.detached(priority: .userInitiated) {
                     guard let input = CGImageSourceCreateWithData(data as CFData, nil),
+                          let properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any],
+                          let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+                          let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+                          let maximum = SourceImageSizing.maximumPixelSize(width: width.doubleValue, height: height.doubleValue, cover: fill),
                           let thumbnail = CGImageSourceCreateThumbnailAtIndex(input, 0, [
                             kCGImageSourceCreateThumbnailFromImageAlways: true,
                             kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: fill ? 720 : 3600
+                            kCGImageSourceThumbnailMaxPixelSize: maximum
                           ] as CFDictionary) else { return UIImage?.none }
                     return UIImage(cgImage: thumbnail)
                 }.value

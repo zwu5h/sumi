@@ -103,5 +103,7 @@ struct LibraryImportChecks {
         precondition(PDFImportProgress(completed: 2, total: 5, currentFile: "test").fraction == 0.4)
         print("PASS: batch partial success, named errors, cleanup, persistence, overlap guard, task/user cancellation and restart")
         try SourceChecks.run()
+        try await ProfileChecks.run(fixture: first)
+        try await SecurityRegressionChecks.run(fixture: first)
     }
 }

@@ -9,6 +9,6 @@
 <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon76x76</string><string>AppIcon83.5x83.5</string></array>
 </dict></dict>
 <key>UILaunchScreen</key><dict/>
-<key>UIFileSharingEnabled</key><true/>
-<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+<key>UIFileSharingEnabled</key><false/>
+<key>LSSupportsOpeningDocumentsInPlace</key><false/>
 </dict></plist>

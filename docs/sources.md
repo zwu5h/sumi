@@ -24,12 +24,11 @@ Only filters provided by the installed extension are shown. Existing MangaDex in
 need adapter version 1.1.0 or newer from the maintained `sumi-extensions` repository. Refreshing
 the repository alone does not update an installed script; review and install its new version.
 
-Open an installed source and enable **Show NSFW content** in its catalog to include
-adult-rated titles. This setting defaults to off, is saved separately for each source,
-and also applies when requesting chapters and pages from saved titles. MangaDex needs
-adapter version 1.2.0 or newer from `sumi-extensions`; refresh the repository and install
-the update explicitly. Other extensions must implement the content setting themselves.
-Removing a source clears its setting. Clearing search filters preserves it.
+Content options come from the source, alongside its other filters. Sumi does not add
+a separate NSFW switch or an additional content restriction. For example, MangaDex
+provides content ratings and ToonTop provides content rating and edition options.
+Tags retain the order supplied by the extension. Older saved NSFW preferences are
+ignored; the source's defaults and selected filters determine the catalog.
 
 Swipe an installed source to remove it. Removing a repository also removes its installed
 extensions. Saved titles and progress remain, with an explicit reinstall error when the
@@ -40,7 +39,7 @@ Installation checks script syntax and the three required method definitions in W
 before committing the extension; a failed update keeps the previously installed version.
 
 Online pages require a connection. PDFs remain the supported offline format. Source
-authentication, automatic update polling, pagination and Paperback SDK compatibility
+authentication, automatic update polling and Paperback SDK compatibility
 are not implemented in v1.
 
 ## A repository without a backend
@@ -141,19 +140,57 @@ the promise. HTML can be parsed with the WebKit DOM APIs (`DOMParser`). Return p
 JSON-serializable data. All title metadata fields shown above and chapter `credit`
 must be present (an empty credit string is permitted).
 
-Limits: 100 extensions per index, 200 titles per search, 10,000 chapters per title,
+Catalogs show **Load more** beside the title count and below the titles when the
+extension returns another page. Changing the query, sorting or filters starts a
+new catalog; failures while loading more keep the titles already visible.
+ToonTop 1.2.0 supports native genres (including exclusions), publication
+status, content rating, edition and additional source filters, together with
+latest updates, recently added, followers, rating, chapter count and views
+(today/week/month/all time). Refresh the repository and install the updated source.
+The extension supplies the available sort options.
+
+`search` receives `page: "1"` initially. A paginated extension can return
+`{titles: [...], nextPage: "2"}` instead of the legacy title array. `nextPage` is an
+opaque string passed back as `page` with the same query and filters; return `null`
+or omit it at the end. Never repeat the requested cursor. A page with every title
+hidden by content filters must still return its next cursor. Legacy arrays remain
+supported and have no additional pages. To support older app builds, extensions can
+return a legacy array when the input does not contain `page`.
+
+Limits: 100 extensions per index, 200 titles per catalog page, 10,000 chapters per title,
 500 pages per chapter, 30 network requests per invocation, 4 simultaneous requests,
 4 MB text responses and 20 MB image downloads. Scripts have a 1 MB download limit;
 indexes have a 500 KB limit. An invocation has a 35-second deadline. Images are
-downsampled before display, and the reader loads only the current and adjacent pages.
+downsampled by width and a 32-megapixel decoded-image budget, preserving the width
+of long webtoon strips. The paged reader loads only the current and adjacent pages.
+MangaDex adapters prefer original chapter images and fall back to data-saver images
+only when originals are absent (maintained adapter version 1.3.0).
 
 ## Optional catalog filters (API v1)
 
+The optional `groups` array supports additional source-specific fields. Each group is
+`{id: "type", name: "Type", options: [{id: "manhwa", name: "Manhwa"}], multiple: false}`.
+Omitting `multiple` means single selection. An empty options array renders a text field.
+The search input `filters` is a JSON object mapping group IDs to arrays of selected IDs
+or the entered text. Empty arrays mean source default. Source adapters validate and apply
+these values on the provider before pagination. `supportsExcludedTags: true` enables
+tri-state tags (any/included/excluded), passed as the JSON array string `excludedTags`.
+`tagModes` may restrict inclusion matching to `["AND"]`; its legacy default is AND/OR.
+All input, including extra groups and exclusions, participates in search identity and
+Load more, so stale pages cannot be appended after a filter changes.
+
+Chapter history is stored separately from the most recent resume position. It is scoped
+to the active profile and keyed by source chapter ID, including when chapters are reordered.
+Resetting a title clears all its chapter positions. Existing data migrates only the known
+chapter; no earlier chapters are assumed read.
+
 Extensions may implement `async filters(input, api)` returning an object with `tags`,
 `statuses` and `sortOrders` arrays. Each option is `{id: "stable-value", name: "Display name"}`;
-return empty arrays for unsupported controls. IDs must be unique within each array.
+return empty arrays (or omit them) for unsupported controls. IDs must be unique within each array.
 There are at most 500 options per array; IDs have at most 500 characters and names 120.
 Older extensions without this method remain searchable and show an unavailable-filters message.
+The legacy boolean `supportsNSFW` is accepted for compatibility but does not add a
+control. Declare source content options through `groups`, just like other filters.
 
 `search` additionally receives string fields `tags` (a JSON-encoded array of selected IDs),
 `tagMode` (`AND` or `OR`), `status` and `sort` (selected option IDs, or empty strings for
@@ -163,11 +200,10 @@ its failure can be retried without blocking the existing title search.
 
 ## Source content setting (API v1)
 
-`search`, `chapters` and `pages` additionally receive `allowNSFW`, the string `"true"`
-or `"false"`, from the saved per-source preference. Treat missing input as `"false"`.
-Apply it consistently to catalog requests, title checks, chapter feeds and page lookup.
-Older extensions may ignore the field and retain their existing content restrictions.
-MangaDex 1.2.0 defaults to Safe and includes all four ratings only for `"true"`.
+`search`, `chapters` and `pages` receive `allowNSFW: "true"` for compatibility with
+older adapters, so they do not require a separate app-level unlock. Content filtering
+belongs to the source's native filters and defaults. Extensions that ignore this
+field retain their existing behavior.
 
 ## Execution and privacy
 
