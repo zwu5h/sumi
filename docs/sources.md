@@ -17,6 +17,13 @@ Source API v1**, not Paperback's SDK or repository format.
 5. Bookmark a title to keep it in Library. Reading progress is saved locally. Refreshing
    a title remaps progress by chapter ID when the source's chapter order changes.
 
+In a source catalog, open **Filters** to search and select tags, match all or any selected
+tags, choose publication status and sort results. Apply combines these choices with the
+title query; Cancel discards edits, and Clear filters restores the source defaults.
+Only filters provided by the installed extension are shown. Existing MangaDex installations
+need adapter version 1.1.0 from the maintained `sumi-extensions` repository. Refreshing
+the repository alone does not update an installed script; review and install its new version.
+
 Swipe an installed source to remove it. Removing a repository also removes its installed
 extensions. Saved titles and progress remain, with an explicit reinstall error when the
 source is unavailable. Refreshing an index never updates executable code silently:
@@ -122,6 +129,20 @@ Limits: 100 extensions per index, 200 titles per search, 10,000 chapters per tit
 4 MB text responses and 20 MB image downloads. Scripts have a 1 MB download limit;
 indexes have a 500 KB limit. An invocation has a 35-second deadline. Images are
 downsampled before display, and the reader loads only the current and adjacent pages.
+
+## Optional catalog filters (API v1)
+
+Extensions may implement `async filters(input, api)` returning an object with `tags`,
+`statuses` and `sortOrders` arrays. Each option is `{id: "stable-value", name: "Display name"}`;
+return empty arrays for unsupported controls. IDs must be unique within each array.
+There are at most 500 options per array; IDs have at most 500 characters and names 120.
+Older extensions without this method remain searchable and show an unavailable-filters message.
+
+`search` additionally receives string fields `tags` (a JSON-encoded array of selected IDs),
+`tagMode` (`AND` or `OR`), `status` and `sort` (selected option IDs, or empty strings for
+source defaults). Extensions apply these together with `query` to their full catalog,
+before limiting results. Filter discovery runs independently from title searches, and
+its failure can be retried without blocking the existing title search.
 
 ## Execution and privacy
 

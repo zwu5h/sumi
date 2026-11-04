@@ -85,6 +85,39 @@ struct SourceTitle: Codable, Identifiable {
     }
 }
 
+struct SourceFilterOption: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+}
+
+struct SourceFilters: Codable {
+    var tags: [SourceFilterOption] = []
+    var statuses: [SourceFilterOption] = []
+    var sortOrders: [SourceFilterOption] = []
+    var isEmpty: Bool { tags.isEmpty && statuses.isEmpty && sortOrders.isEmpty }
+
+    func validate() throws {
+        for options in [tags, statuses, sortOrders] {
+            guard options.count <= 500, Set(options.map(\.id)).count == options.count,
+                  options.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 500 && !$0.name.isEmpty && $0.name.count <= 120 }) else {
+                throw SourceError.invalid("The source returned invalid search filters.")
+            }
+        }
+    }
+}
+
+struct SourceSearchSelection: Equatable {
+    var tags: Set<String> = []
+    var tagMode = "AND"
+    var status = ""
+    var sort = ""
+    var count: Int { tags.count + (status.isEmpty ? 0 : 1) + (sort.isEmpty ? 0 : 1) }
+    var input: [String: String] {
+        ["tags": String(data: try! JSONEncoder().encode(tags.sorted()), encoding: .utf8)!,
+         "tagMode": tagMode, "status": status, "sort": sort]
+    }
+}
+
 struct SourceChapter: Codable, Hashable, Identifiable {
     let id: String
     let title: String

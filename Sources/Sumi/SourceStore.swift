@@ -106,9 +106,19 @@ final class SourceStore: ObservableObject {
         return source
     }
 
-    func search(sourceID: String, query: String) async throws -> [Manga] {
+    func filters(sourceID: String) async throws -> SourceFilters {
         let source = try source(sourceID)
-        let titles = try await SourceRuntime(hosts: source.manifest.hosts).call("search", input: ["query": query], source: source, as: [SourceTitle].self)
+        let filters = try await SourceRuntime(hosts: source.manifest.hosts).call("__filters", input: [:], source: source, as: SourceFilters.self)
+        try filters.validate()
+        try ensureCurrent(source)
+        return filters
+    }
+
+    func search(sourceID: String, query: String, selection: SourceSearchSelection = .init()) async throws -> [Manga] {
+        let source = try source(sourceID)
+        var input = selection.input
+        input["query"] = query
+        let titles = try await SourceRuntime(hosts: source.manifest.hosts).call("search", input: input, source: source, as: [SourceTitle].self)
         guard titles.count <= 200, Set(titles.map(\.id)).count == titles.count,
               titles.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 500 && !$0.title.isEmpty }) else {
             throw SourceError.invalid("The extension returned an invalid title list.")

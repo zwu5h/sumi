@@ -54,6 +54,10 @@ final class SourceRuntime: NSObject, WKScriptMessageHandlerWithReply, WKNavigati
                             return JSON.stringify(typeof source === 'object' && source !== null &&
                                 ['search', 'chapters', 'pages'].every(name => typeof source[name] === 'function'));
                         }
+                        if (operation === '__filters') {
+                            return JSON.stringify(typeof source.filters === 'function'
+                                ? await source.filters(input, api) : {tags: [], statuses: [], sortOrders: []});
+                        }
                         if (typeof source !== 'object' || typeof source[operation] !== 'function') {
                             throw new Error('Extension does not implement ' + operation);
                         }

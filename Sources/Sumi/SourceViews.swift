@@ -122,11 +122,23 @@ struct SourceCatalogView: View {
     @State private var retry = 0
     @State private var loading = false
     @State private var error: String?
+    @State private var filters = SourceFilters()
+    @State private var selection = SourceSearchSelection()
+    @State private var showingFilters = false
+    @State private var filterError: String?
+    @State private var loadingFilters = false
     private var source: InstalledSource? { sources.installed.first { $0.id == sourceID } }
-    private var taskKey: String { sourceID + ":" + (source.map { String($0.manifest.hashValue) } ?? "removed") + ":" + query + ":\(retry)" }
+    private var sourceKey: String { sourceID + ":" + (source.map { String($0.manifest.hashValue) } ?? "removed") }
+    private var taskKey: String { sourceKey + ":" + query + ":\(retry):" + selection.tags.sorted().joined(separator: ",") + ":" + selection.tagMode + ":" + selection.status + ":" + selection.sort }
 
     var body: some View {
         List {
+            if selection.count > 0 {
+                Section {
+                    Text(activeFilters).font(.subheadline).foregroundStyle(.secondary)
+                    Button("Clear filters") { selection = SourceSearchSelection() }
+                }
+            }
             if source == nil {
                 ContentUnavailableView("Source removed", systemImage: "network.slash", description: Text("Install this source again in Settings → Sources."))
             } else if loading {
@@ -135,7 +147,7 @@ struct SourceCatalogView: View {
                 Text(error).foregroundStyle(.secondary)
                 Button("Try again") { retry += 1 }
             } else if results.isEmpty {
-                ContentUnavailableView.search(text: query)
+                ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Try another title or change your filters."))
             } else {
                 ForEach(results) { manga in
                     NavigationLink { MangaDetailView(manga: manga) } label: {
@@ -153,6 +165,22 @@ struct SourceCatalogView: View {
         }.scrollContentBackground(.hidden).pageBackground()
             .navigationTitle(source?.manifest.name ?? "Source")
             .searchable(text: $query, prompt: "Search this source")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingFilters = true } label: {
+                        Label(selection.count > 0 ? "Filters (\(selection.count))" : "Filters", systemImage: selection.count > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }.disabled(source == nil)
+                }
+            }
+            .sheet(isPresented: $showingFilters) {
+                SourceFilterView(filters: filters, selection: $selection, loading: loadingFilters, error: filterError) {
+                    Task { await loadFilters() }
+                }
+            }
+            .task(id: sourceKey) {
+                filters = SourceFilters(); selection = SourceSearchSelection()
+                await loadFilters()
+            }
             .task(id: taskKey) {
                 loading = true; results = []; error = nil
                 do { try await Task.sleep(for: .milliseconds(400)); try Task.checkCancellation(); await search() }
@@ -160,17 +188,117 @@ struct SourceCatalogView: View {
             }
     }
 
+    private var activeFilters: String {
+        var labels = filters.tags.filter { selection.tags.contains($0.id) }.map(\.name)
+        if let status = filters.statuses.first(where: { $0.id == selection.status }) { labels.append(status.name) }
+        if let sort = filters.sortOrders.first(where: { $0.id == selection.sort }) { labels.append(sort.name) }
+        return labels.joined(separator: " · ")
+    }
+
+    @MainActor private func loadFilters() async {
+        let key = sourceKey
+        loadingFilters = true; filterError = nil
+        do {
+            let value = try await sources.filters(sourceID: sourceID)
+            try Task.checkCancellation()
+            guard key == sourceKey else { return }
+            filters = value; loadingFilters = false
+        } catch {
+            guard !Task.isCancelled, key == sourceKey else { return }
+            filterError = error.localizedDescription; loadingFilters = false
+        }
+    }
+
     @MainActor private func search() async {
         let key = taskKey
         loading = true; error = nil
         do {
-            let value = try await sources.search(sourceID: sourceID, query: query)
+            let value = try await sources.search(sourceID: sourceID, query: query, selection: selection)
             try Task.checkCancellation()
             guard key == taskKey else { return }
             results = value; loading = false
         } catch {
             guard !Task.isCancelled, key == taskKey else { return }
             self.error = error.localizedDescription; loading = false
+        }
+    }
+}
+
+private struct SourceFilterView: View {
+    @Environment(\.dismiss) private var dismiss
+    let filters: SourceFilters
+    @Binding var selection: SourceSearchSelection
+    let loading: Bool
+    let error: String?
+    let retry: () -> Void
+    @State private var draft = SourceSearchSelection()
+    @State private var tagQuery = ""
+
+    private var visibleTags: [SourceFilterOption] {
+        let term = tagQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return filters.tags.filter { term.isEmpty || $0.name.localizedCaseInsensitiveContains(term) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if loading { ProgressView("Loading filters…") }
+                else if let error {
+                    Text(error).foregroundStyle(.secondary)
+                    Button("Try again", action: retry)
+                } else if filters.isEmpty {
+                    ContentUnavailableView("No filters available", systemImage: "line.3.horizontal.decrease.circle", description: Text("This source does not provide search filters. If an update is available, refresh its repository and install the updated source."))
+                } else {
+                    if !filters.statuses.isEmpty {
+                        Section("Publication") {
+                            Picker("Status", selection: $draft.status) {
+                                Text("Any status").tag("")
+                                ForEach(filters.statuses) { Text($0.name).tag($0.id) }
+                            }
+                        }
+                    }
+                    if !filters.sortOrders.isEmpty {
+                        Section("Sort") {
+                            Picker("Sort by", selection: $draft.sort) {
+                                Text("Source default").tag("")
+                                ForEach(filters.sortOrders) { Text($0.name).tag($0.id) }
+                            }
+                        }
+                    }
+                    if !filters.tags.isEmpty {
+                        Section {
+                            Picker("Match tags", selection: $draft.tagMode) {
+                                Text("All selected").tag("AND")
+                                Text("Any selected").tag("OR")
+                            }
+                            TextField("Search tags", text: $tagQuery).autocorrectionDisabled()
+                                .accessibilityLabel("Search tags")
+                            if visibleTags.isEmpty { Text("No matching tags").foregroundStyle(.secondary) }
+                            ForEach(visibleTags) { tag in
+                                Button {
+                                    if !draft.tags.insert(tag.id).inserted { draft.tags.remove(tag.id) }
+                                } label: {
+                                    HStack {
+                                        Text(tag.name).foregroundStyle(.primary)
+                                        Spacer()
+                                        Image(systemName: draft.tags.contains(tag.id) ? "checkmark.circle.fill" : "circle")
+                                    }.frame(minHeight: 44)
+                                }.accessibilityAddTraits(draft.tags.contains(tag.id) ? [.isSelected] : [])
+                            }
+                        } header: { Text("Tags (\(draft.tags.count) selected)") }
+                    }
+                    Section { Button("Reset filters") { draft = SourceSearchSelection(); tagQuery = "" } }
+                }
+            }.scrollContentBackground(.hidden).pageBackground()
+                .navigationTitle("Filters").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Apply") { selection = draft; dismiss() }.disabled(loading || error != nil || filters.isEmpty)
+                    }
+                }
+                .onAppear { draft = selection }
         }
     }
 }

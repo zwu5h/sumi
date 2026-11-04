@@ -37,6 +37,20 @@ enum SourceChecks {
         }
         rejects { try RepositoryIndex(schemaVersion: 1, name: "Duplicate", extensions: [valid.extensions[0], valid.extensions[0]]).validate() }
 
+        let tag = SourceFilterOption(id: "adventure", name: "Adventure")
+        try SourceFilters(tags: [tag]).validate()
+        rejects { try SourceFilters(tags: [tag, tag]).validate() }
+        rejects { try SourceFilters(statuses: [.init(id: "", name: "Invalid")]).validate() }
+        rejects { try SourceFilters(sortOrders: [.init(id: "title", name: "")]).validate() }
+        var selection = SourceSearchSelection()
+        precondition(selection.count == 0)
+        selection.tags = ["fantasy", "adventure"]
+        selection.tagMode = "OR"; selection.status = "completed"; selection.sort = "title"
+        precondition(selection.count == 4)
+        let selectedTags = try JSONDecoder().decode([String].self, from: Data(selection.input["tags"]!.utf8))
+        precondition(selectedTags == ["adventure", "fantasy"])
+        precondition(selection.input["tagMode"] == "OR" && selection.input["status"] == "completed" && selection.input["sort"] == "title")
+
         // Older local PDFs have no remote field; the existing library must still decode.
         let legacy = Data("""
         {"id":"legacy","title":"Old PDF","author":"Local","synopsis":"","genre":"Imported","palette":0,"chapterCount":1,"fileName":"old.pdf"}
