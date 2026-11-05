@@ -19,7 +19,7 @@ The app bundles no demo titles or artwork; covers come from imported PDFs or sou
 
 The image-generation prompts are saved alongside the reference for reproducibility.
 
-UI typography uses the iOS-bundled Avenir Next family with semantic Dynamic Type
+UI typography uses the iOS system font, San Francisco, with semantic Dynamic Type
 scaling. Decorative slogans and duplicate screen headings have been removed.
 Library and Discover search fields belong to the scroll content, including bounce.
 

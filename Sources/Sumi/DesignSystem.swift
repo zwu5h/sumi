@@ -11,27 +11,12 @@ enum Design {
     static let coverCorner: CGFloat = 12
     static let readingWidth: CGFloat = 840
     static let contentWidth: CGFloat = 1080
-    // Avenir Next ships with iOS; semantic scaling keeps Dynamic Type intact.
     static func font(_ style: Font.TextStyle) -> Font {
-        let size: CGFloat
-        switch style {
-        case .largeTitle: size = 34
-        case .title: size = 28
-        case .title2: size = 22
-        case .title3: size = 20
-        case .headline, .body: size = 17
-        case .callout: size = 16
-        case .subheadline: size = 15
-        case .footnote: size = 13
-        case .caption: size = 12
-        case .caption2: size = 11
-        @unknown default: size = 17
-        }
-        return .custom(style == .headline ? "AvenirNext-DemiBold" : "AvenirNext-Regular", size: size, relativeTo: style)
+        .system(style, design: .default, weight: style == .headline ? .semibold : .regular)
     }
-    static let title = Font.custom("AvenirNext-Bold", size: 34, relativeTo: .largeTitle)
+    static let title = font(.largeTitle).weight(.bold)
     static let eyebrow = font(.caption2).weight(.semibold)
-    static let section = Font.custom("AvenirNext-DemiBold", size: 22, relativeTo: .title2)
+    static let section = font(.title2).weight(.semibold)
     static func surface(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(red: 0.055, green: 0.16, blue: 0.23) : Color(red: 0.88, green: 0.98, blue: 1)
     }
