@@ -1,0 +1,33 @@
+{
+  "name": "Sumi",
+  "subtitle": "Manga reader for iPhone and iPad",
+  "description": "Install Sumi with AltStore Classic. Browse manga through installable sources, organize your library, and read your own PDFs.",
+  "iconURL": "https://raw.githubusercontent.com/zwu5h/sumi/main/Sources/Sumi/Resources/sumi-logo.png",
+  "website": "https://github.com/zwu5h/sumi",
+  "apps": [
+    {
+      "name": "Sumi",
+      "bundleIdentifier": "com.sumi.reader",
+      "developerName": "zwu5h",
+      "subtitle": "Your manga library, wherever you go.",
+      "localizedDescription": "Sumi is a manga reader for iPhone and iPad. Browse and search online manga through installable sources, save titles to your library, and resume reading where you left off. Read page by page or scroll vertically, with right-to-left support and zoom. Import your own PDFs to read offline. Choose a light, dark, or system theme.\n\nNo manga or sources are bundled. Online chapters require an internet connection.",
+      "iconURL": "https://raw.githubusercontent.com/zwu5h/sumi/main/Sources/Sumi/Resources/sumi-logo.png",
+      "category": "entertainment",
+      "versions": [
+        {
+          "version": "1.0.1",
+          "buildVersion": "2",
+          "date": "2026-11-04T21:37:55Z",
+          "downloadURL": "https://github.com/zwu5h/sumi/releases/download/v1.0.1/Sumi.ipa",
+          "size": 5965318,
+          "minOSVersion": "17.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
